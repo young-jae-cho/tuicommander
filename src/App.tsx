@@ -112,6 +112,7 @@ import { isTauri } from "./transport";
 import { openFileAction } from "./utils/filePreview";
 import { navigateToTerminal } from "./utils/navigateToTerminal";
 import { initPaneTabAssignment } from "./utils/paneTabAssign";
+import { repoRpc } from "./utils/repoRpc";
 import { getShellFamily, sendCommand } from "./utils/sendCommand";
 
 const getDefaultFontSize = () => settingsStore.state.defaultFontSize;
@@ -558,7 +559,7 @@ const App: Component = () => {
 		setStatusInfo(`Running git ${op}...`);
 
 		try {
-			const result = await invoke("run_git_command", { path: repoPath, args });
+			const result = await repoRpc(repoPath, "run_git_command", { path: repoPath, args });
 			const { success, stdout, stderr } = result as {
 				success: boolean;
 				stdout: string;

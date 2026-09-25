@@ -37,6 +37,7 @@ import { copyPathToClipboard } from "../../utils/clipboard";
 import { openFileAction } from "../../utils/filePreview";
 import { isAbsolutePath } from "../../utils/pathUtils";
 import { markPerf } from "../../utils/perfTrace";
+import { repoRpc } from "../../utils/repoRpc";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import e from "../shared/editor-header.module.css";
 import { createSearchVisibility } from "../shared/SearchBar";
@@ -291,7 +292,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 		if (isExternal()) {
 			return invoke<string>("read_editor_file_external", { path: props.filePath });
 		}
-		return invoke<string>("read_editor_file", { repoPath: fsRoot(), file: props.filePath });
+		return repoRpc<string>(fsRoot(), "read_editor_file", { repoPath: fsRoot(), file: props.filePath });
 	};
 
 	// Sync dirty state to tab store for the tab bar indicator
@@ -504,7 +505,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 		}
 		void (async () => {
 			try {
-				const changes = await invoke<GutterChange[]>("get_gutter_changes", {
+				const changes = await repoRpc<GutterChange[]>(fsRoot(), "get_gutter_changes", {
 					path: fsRoot(),
 					file: props.filePath,
 					scope: "head",
@@ -547,7 +548,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 		if (!repoPath || isExternal() || !saved || largeDoc()) return;
 		void (async () => {
 			try {
-				const lines = await invoke<BlameLine[]>("get_file_blame", {
+				const lines = await repoRpc<BlameLine[]>(fsRoot(), "get_file_blame", {
 					path: fsRoot(),
 					file: props.filePath,
 				});

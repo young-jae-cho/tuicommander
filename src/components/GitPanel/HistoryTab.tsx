@@ -1,8 +1,8 @@
 import { type Component, createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
-import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
 import { onClickKeyDown } from "../../utils/a11y";
+import { repoRpc } from "../../utils/repoRpc";
 import { relativeTime } from "../../utils/time";
 import type { OpenDiffFn } from "./GitPanel";
 import s from "./HistoryTab.module.css";
@@ -27,7 +27,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
 		if (commits().length === 0) setLoading(true);
 		setHasMore(true);
 		try {
-			const result = await invoke<CommitLogEntry[]>("get_file_history", {
+			const result = await repoRpc<CommitLogEntry[]>(repoPath, "get_file_history", {
 				path: repoPath,
 				file: filePath,
 				count: PAGE_SIZE,
@@ -55,7 +55,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
 		const lastHash = current[current.length - 1].hash;
 		setLoadingMore(true);
 		try {
-			const result = await invoke<CommitLogEntry[]>("get_file_history", {
+			const result = await repoRpc<CommitLogEntry[]>(repoPath, "get_file_history", {
 				path: repoPath,
 				file: filePath,
 				count: PAGE_SIZE,

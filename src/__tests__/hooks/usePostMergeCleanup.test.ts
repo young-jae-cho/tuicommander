@@ -15,6 +15,9 @@ vi.mock("../../stores/repositories", () => ({
 		bumpRevision: mockBumpRevision,
 		bumpGitRevision: mockBumpGitRevision,
 		get: mockGetBranches,
+		// repoRpc resolves the owning connection through this; these tests use
+		// local repos, so undefined -> the local invoke() path (mockInvoke).
+		getConnectionId: () => undefined,
 	},
 }));
 

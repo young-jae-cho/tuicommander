@@ -13,6 +13,7 @@ import type { BranchPrStatus } from "../../types";
 import { cx } from "../../utils";
 import { onClickKeyDown } from "../../utils/a11y";
 import { canApprovePr, effectiveMergeMethod, mergeWithFallback } from "../../utils/prMerge";
+import { repoRpc } from "../../utils/repoRpc";
 import {
 	type CleanupStep,
 	PostMergeCleanupDialog,
@@ -173,7 +174,7 @@ export const RemoteOnlyPrPopover: Component<{
 			const baseBranch = pr.base_ref_name || "main";
 			let hasDirtyFiles = false;
 			try {
-				const status = await invoke<{ stdout: string }>("run_git_command", {
+				const status = await repoRpc<{ stdout: string }>(props.repoPath, "run_git_command", {
 					path: props.repoPath,
 					args: ["status", "--porcelain"],
 				});
@@ -204,7 +205,7 @@ export const RemoteOnlyPrPopover: Component<{
 		setApprovingPr(pr.number);
 		setApproveError(null);
 		try {
-			await invoke("approve_pr", {
+			await repoRpc(props.repoPath, "approve_pr", {
 				repoPath: props.repoPath,
 				prNumber: pr.number,
 			});
@@ -222,7 +223,7 @@ export const RemoteOnlyPrPopover: Component<{
 	const handleViewDiff = async (pr: BranchPrStatus) => {
 		setDiffLoadingPr(pr.number);
 		try {
-			const diff = await invoke<string>("get_pr_diff", {
+			const diff = await repoRpc<string>(props.repoPath, "get_pr_diff", {
 				repoPath: props.repoPath,
 				prNumber: pr.number,
 			});

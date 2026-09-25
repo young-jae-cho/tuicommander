@@ -37,6 +37,9 @@ vi.mock("../../stores/repositories", () => ({
 		getGroupForRepo: vi.fn(() => undefined),
 		getRevision: vi.fn(() => 0),
 		isGitRepo: mockIsGitRepo,
+		// repoRpc resolves the owning connection through this; StatusBar tests
+		// use local repos, so undefined -> the local invoke() path.
+		getConnectionId: () => undefined,
 	},
 }));
 

@@ -3,6 +3,7 @@ import { invoke } from "../invoke";
 import { appLogger } from "../stores/appLogger";
 import type { WorkspaceLifecycleStatus } from "../stores/workspaceIdentity";
 import type { RepoInfo } from "../types";
+import { repoRpc } from "../utils/repoRpc";
 
 // ---------------------------------------------------------------------------
 // TCC (macOS permission) error detection — global, shown once per session
@@ -58,26 +59,32 @@ export interface WorkspaceWorktree {
 	kind: "worktree";
 }
 
-/** Repository hook for git operations */
+/** Repository hook for git operations.
+ *
+ *  Every method routes through `repoRpc(path, …)`, so a repo bound to a remote
+ *  connection has its data fetched from that daemon (HTTP + Basic auth) rather
+ *  than the local backend — where the server path does not exist. Local repos
+ *  keep using Tauri IPC unchanged. */
 export function useRepository() {
 	/** Get repository info */
 	async function getInfo(path: string): Promise<RepoInfo> {
-		return await invoke<RepoInfo>("get_repo_info", { path });
+		return await repoRpc<RepoInfo>(path, "get_repo_info", { path });
 	}
 
 	/** Get git diff for a repository */
 	async function getDiff(path: string, scope?: string): Promise<string> {
-		return await invoke<string>("get_git_diff", { path, scope });
+		return await repoRpc<string>(path, "get_git_diff", { path, scope });
 	}
 
-	/** Open a path in an application, optionally at a specific line/col */
+	/** Open a path in an application, optionally at a specific line/col.
+	 *  Desktop-only (opens a native app on this machine); never remote-routed. */
 	async function openInApp(path: string, app: string, line?: number, col?: number): Promise<void> {
 		await invoke("open_in_app", { path, app, line, col });
 	}
 
 	/** Rename a git branch */
 	async function renameBranch(repoPath: string, oldName: string, newName: string): Promise<void> {
-		await invoke("rename_branch", { path: repoPath, oldName, newName });
+		await repoRpc(repoPath, "rename_branch", { path: repoPath, oldName, newName });
 	}
 
 	/** Create a new git branch (optionally checking it out). */
@@ -87,13 +94,13 @@ export function useRepository() {
 		startPoint: string | null,
 		checkout: boolean,
 	): Promise<void> {
-		await invoke("create_branch", { path: repoPath, name, startPoint, checkout });
+		await repoRpc(repoPath, "create_branch", { path: repoPath, name, startPoint, checkout });
 	}
 
 	/** Get diff stats (additions/deletions) for a repository */
 	async function getDiffStats(path: string, scope?: string): Promise<{ additions: number; deletions: number }> {
 		try {
-			return await invoke<{ additions: number; deletions: number }>("get_diff_stats", { path, scope });
+			return await repoRpc<{ additions: number; deletions: number }>(path, "get_diff_stats", { path, scope });
 		} catch (err) {
 			appLogger.debug("git", "Failed to get diff stats", { path, err });
 			return { additions: 0, deletions: 0 };
@@ -107,7 +114,7 @@ export function useRepository() {
 		deleteBranch: boolean,
 		force?: boolean,
 	): Promise<RemoveWorktreeResult> {
-		return await invoke<RemoveWorktreeResult>("remove_worktree", {
+		return await repoRpc<RemoveWorktreeResult>(repoPath, "remove_worktree", {
 			repoPath,
 			workspaceId,
 			deleteBranch,
@@ -130,17 +137,17 @@ export function useRepository() {
 		branch: string;
 		base_repo: string;
 	}> {
-		return await invoke("create_worktree", { baseRepo, branchName, createBranch, baseRef });
+		return await repoRpc(baseRepo, "create_worktree", { baseRepo, branchName, createBranch, baseRef });
 	}
 
 	/** Fresh backend preflight used immediately before removal. */
 	async function getWorkspaceLifecycle(repoPath: string, workspaceId: string): Promise<WorkspaceLifecycleStatus> {
-		const status = await invoke<{
+		const status = await repoRpc<{
 			dirty: boolean | null;
 			commit_status: WorkspaceLifecycleStatus["commitStatus"];
 			removal_safety: WorkspaceLifecycleStatus["removalSafety"];
 			error?: string;
-		}>("get_workspace_lifecycle", { repoPath, workspaceId });
+		}>(repoPath, "get_workspace_lifecycle", { repoPath, workspaceId });
 		return {
 			dirty: status.dirty,
 			commitStatus: status.commit_status,
@@ -152,7 +159,7 @@ export function useRepository() {
 	/** Get workspaces: workspace id → its checkout */
 	async function getWorktreePaths(repoPath: string): Promise<Record<string, WorkspaceWorktree>> {
 		try {
-			return await invoke<Record<string, WorkspaceWorktree>>("get_worktree_paths", { repoPath });
+			return await repoRpc<Record<string, WorkspaceWorktree>>(repoPath, "get_worktree_paths", { repoPath });
 		} catch (err) {
 			appLogger.warn("git", `Failed to get worktree paths for ${repoPath}`, err);
 			return {};
@@ -162,7 +169,7 @@ export function useRepository() {
 	/** Get list of changed files with status and stats */
 	async function getChangedFiles(path: string, scope?: string): Promise<ChangedFile[]> {
 		try {
-			return await invoke<ChangedFile[]>("get_changed_files", { path, scope });
+			return await repoRpc<ChangedFile[]>(path, "get_changed_files", { path, scope });
 		} catch (err) {
 			appLogger.error("git", "Failed to get changed files", err);
 			return [];
@@ -172,7 +179,7 @@ export function useRepository() {
 	/** Get diff for a single file */
 	async function getFileDiff(path: string, file: string, scope?: string, untracked?: boolean): Promise<string> {
 		try {
-			return await invoke<string>("get_file_diff", { path, file, scope, untracked: untracked || undefined });
+			return await repoRpc<string>(path, "get_file_diff", { path, file, scope, untracked: untracked || undefined });
 		} catch (err) {
 			appLogger.error("git", "Failed to get file diff", err);
 			return "";
@@ -190,7 +197,7 @@ export function useRepository() {
 	/** List all markdown files in repository with git status */
 	async function listMarkdownFiles(path: string): Promise<MarkdownFileEntry[]> {
 		try {
-			return await invoke<MarkdownFileEntry[]>("list_markdown_files", { path });
+			return await repoRpc<MarkdownFileEntry[]>(path, "list_markdown_files", { path });
 		} catch (err) {
 			appLogger.error("git", "Failed to list markdown files", err);
 			return [];
@@ -200,7 +207,7 @@ export function useRepository() {
 	/** Read file content */
 	async function readFile(path: string, file: string): Promise<string> {
 		try {
-			return await invoke<string>("read_file", { path, file });
+			return await repoRpc<string>(path, "read_file", { path, file });
 		} catch (err) {
 			const msg = String(err);
 			// ENOENT is legitimate (file deleted/renamed while a tab still points at it)
@@ -228,7 +235,7 @@ export function useRepository() {
 	/** List base ref options for branch/worktree creation (local + remote, grouped) */
 	async function listBaseRefOptions(repoPath: string): Promise<BaseRefOption[]> {
 		try {
-			return await invoke<BaseRefOption[]>("list_base_ref_options", { repoPath });
+			return await repoRpc<BaseRefOption[]>(repoPath, "list_base_ref_options", { repoPath });
 		} catch (err) {
 			appLogger.error("git", `Failed to list base ref options for ${repoPath}`, err);
 			return [];
@@ -259,7 +266,7 @@ export function useRepository() {
 		afterMerge: string,
 		force = false,
 	): Promise<MergeArchiveResult> {
-		return await invoke<MergeArchiveResult>("merge_and_archive_worktree", {
+		return await repoRpc<MergeArchiveResult>(repoPath, "merge_and_archive_worktree", {
 			repoPath,
 			branchName,
 			workspaceId,
@@ -279,7 +286,7 @@ export function useRepository() {
 		action: "archive" | "delete",
 		force = false,
 	): Promise<MergeArchiveResult> {
-		return await invoke<MergeArchiveResult>("finalize_merged_worktree", {
+		return await repoRpc<MergeArchiveResult>(repoPath, "finalize_merged_worktree", {
 			repoPath,
 			workspaceId,
 			action,
@@ -297,7 +304,7 @@ export function useRepository() {
 	/** Get branches fully merged into the repo's main branch */
 	async function getMergedBranches(repoPath: string): Promise<string[]> {
 		try {
-			return await invoke<string[]>("get_merged_branches", { path: repoPath });
+			return await repoRpc<string[]>(repoPath, "get_merged_branches", { path: repoPath });
 		} catch (err) {
 			appLogger.warn("git", `Failed to get merged branches for ${repoPath}`, err);
 			return [];
@@ -314,7 +321,7 @@ export function useRepository() {
 		workspace_statuses: Record<string, unknown>;
 	}> {
 		try {
-			return await invoke("get_repo_summary", { repoPath });
+			return await repoRpc(repoPath, "get_repo_summary", { repoPath });
 		} catch (err) {
 			appLogger.warn("git", `Failed to get repo summary for ${repoPath}`, err);
 			return { worktree_paths: {}, merged_branches: [], diff_stats: {}, last_commit_ts: {}, workspace_statuses: {} };
@@ -328,7 +335,7 @@ export function useRepository() {
 		merged_branches: string[];
 	}> {
 		try {
-			return await invoke("get_repo_structure", { repoPath });
+			return await repoRpc(repoPath, "get_repo_structure", { repoPath });
 		} catch (err) {
 			checkTccError(err, repoPath);
 			appLogger.warn("git", `Failed to get repo structure for ${repoPath}`, err);
@@ -352,7 +359,7 @@ export function useRepository() {
 		>;
 	}> {
 		try {
-			return await invoke("get_repo_diff_stats", { repoPath });
+			return await repoRpc(repoPath, "get_repo_diff_stats", { repoPath });
 		} catch (err) {
 			checkTccError(err, repoPath);
 			appLogger.warn("git", `Failed to get repo diff stats for ${repoPath}`, err);
@@ -376,7 +383,7 @@ export function useRepository() {
 		branchName: string,
 		opts?: { force?: boolean; stash?: boolean },
 	): Promise<SwitchBranchResult> {
-		return await invoke<SwitchBranchResult>("switch_branch", {
+		return await repoRpc<SwitchBranchResult>(repoPath, "switch_branch", {
 			repoPath,
 			branchName,
 			force: opts?.force ?? false,
@@ -386,13 +393,13 @@ export function useRepository() {
 
 	/** Check out a remote-only branch as a new local branch tracking origin. */
 	async function checkoutRemoteBranch(repoPath: string, branchName: string): Promise<void> {
-		await invoke("checkout_remote_branch", { repoPath, branchName });
+		await repoRpc(repoPath, "checkout_remote_branch", { repoPath, branchName });
 	}
 
 	/** Detect linked worktrees in detached HEAD state (branch was deleted). */
 	async function detectOrphanWorktrees(repoPath: string): Promise<string[]> {
 		try {
-			return await invoke<string[]>("detect_orphan_worktrees", { repoPath });
+			return await repoRpc<string[]>(repoPath, "detect_orphan_worktrees", { repoPath });
 		} catch (err) {
 			appLogger.error("git", "Failed to detect orphan worktrees", err);
 			return [];
@@ -401,18 +408,18 @@ export function useRepository() {
 
 	/** Remove a detached-HEAD worktree by path (no branch to look up). */
 	async function removeOrphanWorktree(repoPath: string, worktreePath: string): Promise<void> {
-		await invoke("remove_orphan_worktree", { repoPath, worktreePath });
+		await repoRpc(repoPath, "remove_orphan_worktree", { repoPath, worktreePath });
 	}
 
 	/** Merge a PR via GitHub REST API. merge_method: "merge" | "squash" | "rebase" */
 	async function mergePrViaGithub(repoPath: string, prNumber: number, mergeMethod: string): Promise<string> {
-		return await invoke<string>("merge_pr_via_github", { repoPath, prNumber, mergeMethod });
+		return await repoRpc<string>(repoPath, "merge_pr_via_github", { repoPath, prNumber, mergeMethod });
 	}
 
 	/** List local branch names for a repository */
 	async function listLocalBranches(repoPath: string): Promise<string[]> {
 		try {
-			return await invoke<string[]>("list_local_branches", { repoPath });
+			return await repoRpc<string[]>(repoPath, "list_local_branches", { repoPath });
 		} catch (err) {
 			checkTccError(err, repoPath);
 			appLogger.error("git", "Failed to list local branches", err);
@@ -425,13 +432,16 @@ export function useRepository() {
 		script: string,
 		cwd: string,
 	): Promise<{ exit_code: number; stdout: string; stderr: string }> {
-		return await invoke<{ exit_code: number; stdout: string; stderr: string }>("run_setup_script", { script, cwd });
+		return await repoRpc<{ exit_code: number; stdout: string; stderr: string }>(cwd, "run_setup_script", {
+			script,
+			cwd,
+		});
 	}
 
 	/** Get recent commits for a repository */
 	async function getRecentCommits(path: string, count?: number): Promise<RecentCommit[]> {
 		try {
-			return await invoke<RecentCommit[]>("get_recent_commits", { path, count });
+			return await repoRpc<RecentCommit[]>(path, "get_recent_commits", { path, count });
 		} catch (err) {
 			appLogger.error("git", "Failed to get recent commits", err);
 			return [];

@@ -1,10 +1,10 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { type Component, createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
-import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { isDiffStatus } from "../../stores/diffTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
+import { repoRpc } from "../../utils/repoRpc";
 import { fullTimestamp, relativeTimeWithClock } from "../../utils/time";
 import type { GraphNode } from "./CommitGraph";
 import { CommitGraph, graphWidth } from "./CommitGraph";
@@ -82,11 +82,11 @@ export const LogTab: Component<LogTabProps> = (props) => {
 		setHasMore(true);
 		try {
 			const [logResult, graphResult] = await Promise.all([
-				invoke<CommitLogEntry[]>("get_commit_log", {
+				repoRpc<CommitLogEntry[]>(repoPath, "get_commit_log", {
 					path: repoPath,
 					count: PAGE_SIZE,
 				}),
-				invoke<GraphNode[]>("get_commit_graph", {
+				repoRpc<GraphNode[]>(repoPath, "get_commit_graph", {
 					path: repoPath,
 					count: 200,
 				}).catch((err) => {
@@ -118,7 +118,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
 		const lastHash = current[current.length - 1].hash;
 		setLoadingMore(true);
 		try {
-			const result = await invoke<CommitLogEntry[]>("get_commit_log", {
+			const result = await repoRpc<CommitLogEntry[]>(repoPath, "get_commit_log", {
 				path: repoPath,
 				count: PAGE_SIZE,
 				after: lastHash,
@@ -158,7 +158,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
 		if (!changedFiles()[hash]) {
 			setFilesLoading((prev) => ({ ...prev, [hash]: true }));
 			try {
-				const files = await invoke<ChangedFile[]>("get_changed_files", {
+				const files = await repoRpc<ChangedFile[]>(repoPath, "get_changed_files", {
 					path: repoPath,
 					scope: hash,
 				});

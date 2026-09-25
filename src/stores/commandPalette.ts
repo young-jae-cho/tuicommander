@@ -1,8 +1,8 @@
 import { createStore } from "solid-js/store";
-import { invoke } from "../invoke";
 import type { TerminalMatch } from "../types";
 import type { ContentMatch, DirEntry } from "../types/fs";
 import { listenContentSearch, newContentSearchId, startContentSearch } from "../utils/contentSearch";
+import { repoRpc } from "../utils/repoRpc";
 import { appLogger } from "./appLogger";
 import { repositoriesStore } from "./repositories";
 import { terminalsStore } from "./terminals";
@@ -106,7 +106,7 @@ function createCommandPaletteStore() {
 		cancelled = false;
 		setState({ filenameResults: [], filenameSearching: true });
 
-		invoke<DirEntry[]>("search_files", { repoPath, query: searchQuery, limit: 50 })
+		repoRpc<DirEntry[]>(repoPath, "search_files", { repoPath, query: searchQuery, limit: 50 })
 			.then((results) => {
 				if (!cancelled) {
 					setState({ filenameResults: results, filenameSearching: false });

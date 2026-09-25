@@ -18,6 +18,7 @@ import { handleOpenUrl } from "../../utils/openUrl";
 import { isAlreadyMerged, mergeWithFallback } from "../../utils/prMerge";
 import { prContextVariables } from "../../utils/promptContext";
 import { getRepoColor } from "../../utils/repoColor";
+import { repoRpc } from "../../utils/repoRpc";
 import { interpolateTemplate } from "../../utils/templateInterpolation";
 import {
 	type CleanupStep,
@@ -219,7 +220,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 			const baseBranch = pr.base_ref_name || "main";
 			let hasDirtyFiles = false;
 			try {
-				const status = await invoke<{ stdout: string }>("run_git_command", {
+				const status = await repoRpc<{ stdout: string }>(props.repoPath, "run_git_command", {
 					path: props.repoPath,
 					args: ["status", "--porcelain"],
 				});
@@ -256,7 +257,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 		if (!pr) return;
 		setDiffLoading(true);
 		try {
-			const diff = await invoke<string>("get_pr_diff", {
+			const diff = await repoRpc<string>(props.repoPath, "get_pr_diff", {
 				repoPath: props.repoPath,
 				prNumber: pr.number,
 			});

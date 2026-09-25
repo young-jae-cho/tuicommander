@@ -1,6 +1,5 @@
 import { type Component, createSignal, For, Show } from "solid-js";
 import { t } from "../../i18n";
-import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { githubStore } from "../../stores/github";
 import { mdTabsStore } from "../../stores/mdTabs";
@@ -15,6 +14,7 @@ import { onClickKeyDown } from "../../utils/a11y";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { canApprovePr, effectiveMergeMethod, mergeWithFallback } from "../../utils/prMerge";
 import { prContextVariables } from "../../utils/promptContext";
+import { repoRpc } from "../../utils/repoRpc";
 import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
 import { PrStateBadge } from "./PrStateBadge";
@@ -84,7 +84,7 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 			const baseBranch = pr.base_ref_name || "main";
 			let hasDirtyFiles = false;
 			try {
-				const status = await invoke<{ stdout: string }>("run_git_command", {
+				const status = await repoRpc<{ stdout: string }>(props.repoPath, "run_git_command", {
 					path: props.repoPath,
 					args: ["status", "--porcelain"],
 				});
@@ -106,7 +106,7 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 		setApprovingPr(pr.number);
 		setApproveError(null);
 		try {
-			await invoke("approve_pr", { repoPath: props.repoPath, prNumber: pr.number });
+			await repoRpc(props.repoPath, "approve_pr", { repoPath: props.repoPath, prNumber: pr.number });
 			appLogger.info("github", `Approved PR #${pr.number}`);
 			githubStore.pollRepo(props.repoPath);
 		} catch (e) {
@@ -121,7 +121,10 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 	const handleViewDiff = async (pr: BranchPrStatus) => {
 		setDiffLoadingPr(pr.number);
 		try {
-			const diff = await invoke<string>("get_pr_diff", { repoPath: props.repoPath, prNumber: pr.number });
+			const diff = await repoRpc<string>(props.repoPath, "get_pr_diff", {
+				repoPath: props.repoPath,
+				prNumber: pr.number,
+			});
 			mdTabsStore.addPrDiff(props.repoPath, pr.number, pr.title, diff);
 		} catch (e) {
 			const msg = String(e);

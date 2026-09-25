@@ -1,8 +1,8 @@
 import { type Component, createSignal, onCleanup, Show } from "solid-js";
-import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
+import { repoRpc } from "../../utils/repoRpc";
 import s from "./SyncRow.module.css";
 import type { WorkingTreeStatus } from "./types";
 
@@ -85,7 +85,7 @@ export const SyncRow: Component<SyncRowProps> = (props) => {
 		if (dismissTimer) clearTimeout(dismissTimer);
 
 		try {
-			const result = await invoke<GitCommandResult>("run_git_command", {
+			const result = await repoRpc<GitCommandResult>(props.repoPath, "run_git_command", {
 				path: props.repoPath,
 				args: op.args,
 			});

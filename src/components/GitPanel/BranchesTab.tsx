@@ -1,6 +1,5 @@
 import { type Component, createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { BaseRefOption } from "../../hooks/useRepository";
-import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
 import { toastsStore } from "../../stores/toasts";
@@ -9,6 +8,7 @@ import { onClickKeyDown } from "../../utils/a11y";
 import { branchListsEqual } from "../../utils/branchListsEqual";
 import { writeClipboard } from "../../utils/clipboard";
 import { handleOpenUrl } from "../../utils/openUrl";
+import { repoRpc } from "../../utils/repoRpc";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ContextMenu, type ContextMenuItem, createContextMenu } from "../ContextMenu/ContextMenu";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
@@ -207,8 +207,8 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 		if (branches().length === 0) setLoading(true);
 		try {
 			const [result, recent] = await Promise.all([
-				invoke<BranchDetail[]>("get_branches_detail", { path: repoPath }),
-				invoke<string[]>("get_recent_branches", { path: repoPath, limit: 5 }).catch((err) => {
+				repoRpc<BranchDetail[]>(repoPath, "get_branches_detail", { path: repoPath }),
+				repoRpc<string[]>(repoPath, "get_recent_branches", { path: repoPath, limit: 5 }).catch((err) => {
 					appLogger.warn("git", "Failed to load recent branches", err);
 					return [] as string[];
 				}),
@@ -307,9 +307,9 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 		try {
 			if (branch.is_remote) {
 				const localName = branch.name.replace(/^origin\//, "");
-				await invoke("checkout_remote_branch", { repoPath: props.repoPath, branchName: localName });
+				await repoRpc(props.repoPath, "checkout_remote_branch", { repoPath: props.repoPath, branchName: localName });
 			} else {
-				await invoke("switch_branch", {
+				await repoRpc(props.repoPath, "switch_branch", {
 					repoPath: props.repoPath,
 					branchName: branch.name,
 					force,
@@ -359,7 +359,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 		setCreateState({ name: "", checkout: true, startPoint: null });
 		// Fetch base ref options for the "from" dropdown
 		if (props.repoPath) {
-			invoke<BaseRefOption[]>("list_base_ref_options", { repoPath: props.repoPath })
+			repoRpc<BaseRefOption[]>(props.repoPath, "list_base_ref_options", { repoPath: props.repoPath })
 				.then(setCreateBaseRefs)
 				.catch(() => setCreateBaseRefs([]));
 		}
@@ -376,7 +376,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 			return;
 		}
 		try {
-			await invoke("create_branch", {
+			await repoRpc(props.repoPath, "create_branch", {
 				path: props.repoPath,
 				name,
 				startPoint: state.startPoint,
@@ -419,7 +419,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 	async function deleteBranchByName(name: string, force: boolean): Promise<boolean> {
 		if (!props.repoPath) return false;
 		try {
-			await invoke("delete_branch", { path: props.repoPath, name, force });
+			await repoRpc(props.repoPath, "delete_branch", { path: props.repoPath, name, force });
 			repositoriesStore.bumpGitRevision(props.repoPath);
 			return true;
 		} catch (err) {
@@ -493,7 +493,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 		setRenamingBranch(null);
 		if (!newName || newName === oldName) return;
 		try {
-			await invoke("rename_branch", { path: props.repoPath, oldName, newName });
+			await repoRpc(props.repoPath, "rename_branch", { path: props.repoPath, oldName, newName });
 			repositoriesStore.bumpGitRevision(props.repoPath);
 			appLogger.info("git", `Renamed branch ${oldName} to ${newName}`);
 		} catch (err) {
@@ -528,7 +528,10 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 		let res: GitCommandResult;
 		try {
-			res = await invoke<GitCommandResult>("run_git_command", { path: props.repoPath, args: ["merge", branch.name] });
+			res = await repoRpc<GitCommandResult>(props.repoPath, "run_git_command", {
+				path: props.repoPath,
+				args: ["merge", branch.name],
+			});
 		} catch (err) {
 			appLogger.error("git", `Merge of ${branch.name} failed`, err);
 			toastsStore.add("Merge failed", `Could not run merge for "${branch.name}"`, "error", true);
@@ -613,7 +616,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 		if (!props.repoPath) return;
 		let res: GitCommandResult;
 		try {
-			res = await invoke<GitCommandResult>("run_git_command", { path: props.repoPath, args });
+			res = await repoRpc<GitCommandResult>(props.repoPath, "run_git_command", { path: props.repoPath, args });
 		} catch (err) {
 			appLogger.error("git", `${failTitle}: ${String(err)}`, err);
 			toastsStore.add(failTitle, failMessage, "error", true);
@@ -650,7 +653,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 	async function openBranchOnGitHub(branch: BranchDetail) {
 		if (!props.repoPath) return;
 		try {
-			const remoteUrl = await invoke<string | null>("get_remote_url", { path: props.repoPath });
+			const remoteUrl = await repoRpc<string | null>(props.repoPath, "get_remote_url", { path: props.repoPath });
 			if (!remoteUrl) return;
 			const ghBase = remoteUrlToGitHub(remoteUrl);
 			if (!ghBase) return;
@@ -679,10 +682,14 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 			return;
 		}
 		try {
-			const result = await invoke<{ success: boolean; stdout: string; stderr: string }>("run_git_command", {
-				path: props.repoPath,
-				args: ["diff", "--name-status", `${cur.name}...${branch.name}`],
-			});
+			const result = await repoRpc<{ success: boolean; stdout: string; stderr: string }>(
+				props.repoPath,
+				"run_git_command",
+				{
+					path: props.repoPath,
+					args: ["diff", "--name-status", `${cur.name}...${branch.name}`],
+				},
+			);
 			if (result.success) {
 				const lines = result.stdout.trim().split("\n").filter(Boolean);
 				if (lines.length === 0) {
@@ -716,7 +723,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 	async function doUpdateFromBase(branch: BranchDetail) {
 		if (!props.repoPath) return;
 		try {
-			const result = await invoke<string>("update_from_base", {
+			const result = await repoRpc<string>(props.repoPath, "update_from_base", {
 				path: props.repoPath,
 				branchName: branch.name,
 				strategy: "rebase",

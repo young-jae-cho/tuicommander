@@ -1,5 +1,4 @@
 import type { Accessor, Setter } from "solid-js";
-import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { autofixBranchName } from "../../stores/autofix";
 import { githubStore } from "../../stores/github";
@@ -7,6 +6,7 @@ import { repoSettingsStore } from "../../stores/repoSettings";
 import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../../utils/prMerge";
+import { repoRpc } from "../../utils/repoRpc";
 import { type AgentSeed, buildAgentSeed } from "./agentSeed";
 import type { PendingCreation } from "./createRepositoryRefreshCoordinator";
 
@@ -121,7 +121,7 @@ export function createWorktreeWorkflowCoordinator(deps: WorktreeWorkflowCoordina
 		setCreatingWorktreeRepos((prev) => new Set([...prev, repoPath]));
 
 		try {
-			const result = await invoke<{
+			const result = await repoRpc<{
 				status: "clean" | "clean_unverified" | "conflicts";
 				worktree_path: string;
 				branch: string;
@@ -130,7 +130,7 @@ export function createWorktreeWorkflowCoordinator(deps: WorktreeWorkflowCoordina
 				base_warning: string | null;
 				conflicted_files: string[];
 				prompt: string;
-			}>("start_conflict_assist", { repoPath, prNumber });
+			}>(repoPath, "start_conflict_assist", { repoPath, prNumber });
 
 			if (result.status === "clean" || result.status === "clean_unverified") {
 				deps.setStatusInfo(
@@ -266,7 +266,7 @@ export function createWorktreeWorkflowCoordinator(deps: WorktreeWorkflowCoordina
 		const branchName = repositoriesStore.branchNameFor(repoPath, workspaceId);
 		let hasDirtyFiles = false;
 		try {
-			const status = await invoke<{ stdout: string }>("run_git_command", {
+			const status = await repoRpc<{ stdout: string }>(repoPath, "run_git_command", {
 				path: repoPath,
 				args: ["status", "--porcelain"],
 			});
@@ -278,7 +278,7 @@ export function createWorktreeWorkflowCoordinator(deps: WorktreeWorkflowCoordina
 
 		let worktreeDirty = false;
 		try {
-			worktreeDirty = await invoke<boolean>("check_worktree_dirty", { repoPath, workspaceId });
+			worktreeDirty = await repoRpc<boolean>(repoPath, "check_worktree_dirty", { repoPath, workspaceId });
 		} catch (err) {
 			appLogger.warn("git", `Could not check the ${branchName} worktree, assuming dirty`, err);
 			worktreeDirty = true;

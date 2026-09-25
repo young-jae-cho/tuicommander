@@ -12,7 +12,6 @@ import {
 import { AGENT_DISPLAY } from "../../agents";
 import { useGitHub } from "../../hooks/useGitHub";
 import { t } from "../../i18n";
-import { invoke } from "../../invoke";
 import { shortenHomePath } from "../../platform";
 import { formatWaitTime } from "../../rate-limit";
 import { appLogger } from "../../stores/appLogger";
@@ -27,6 +26,7 @@ import { cx } from "../../utils";
 import { writeClipboard } from "../../utils/clipboard";
 import { keyFor } from "../../utils/hotkey";
 import { activePrStatus } from "../../utils/mergedPrGrace";
+import { repoRpc } from "../../utils/repoRpc";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { AgentIcon } from "../ui/AgentIcon";
 import { CiBadge, PrBadge } from "../ui/StatusBadge";
@@ -193,7 +193,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 		onCleanup(() => {
 			cancelled = true;
 		});
-		invoke<{ staged: unknown[]; unstaged: unknown[]; untracked: string[] }>("get_working_tree_status", {
+		repoRpc<{ staged: unknown[]; unstaged: unknown[]; untracked: string[] }>(repoPath, "get_working_tree_status", {
 			path: repoPath,
 		})
 			.then((st) => {

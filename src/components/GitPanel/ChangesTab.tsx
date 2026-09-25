@@ -1,6 +1,5 @@
 import { type Component, createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { useSmartPrompts } from "../../hooks/useSmartPrompts";
-import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { isDiffStatus } from "../../stores/diffTabs";
 import { promptLibraryStore } from "../../stores/promptLibrary";
@@ -10,6 +9,7 @@ import { cx, globToRegex } from "../../utils";
 import { onClickKeyDown } from "../../utils/a11y";
 import { joinPath } from "../../utils/pathUtils";
 import { fileContextSmartMenuItem } from "../../utils/promptContext";
+import { repoRpc } from "../../utils/repoRpc";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ContextMenu, type ContextMenuItem, createContextMenu } from "../ContextMenu";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
@@ -197,7 +197,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 			cancelled = true;
 		});
 
-		invoke<WorkingTreeStatus>("get_working_tree_status", { path: repoPath })
+		repoRpc<WorkingTreeStatus>(repoPath, "get_working_tree_status", { path: repoPath })
 			.then((status) => {
 				if (cancelled) return;
 				setStaged(
@@ -234,7 +234,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 	async function stageFile(filePath: string) {
 		if (!props.repoPath) return;
 		try {
-			await invoke("git_stage_files", { path: props.repoPath, files: [filePath] });
+			await repoRpc(props.repoPath, "git_stage_files", { path: props.repoPath, files: [filePath] });
 		} catch (err) {
 			appLogger.error("git", `Failed to stage ${filePath}`, err);
 			toastsStore.add("Stage failed", `Could not stage "${filePath}": ${String(err)}`, "error", true);
@@ -244,7 +244,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 	async function unstageFile(filePath: string) {
 		if (!props.repoPath) return;
 		try {
-			await invoke("git_unstage_files", { path: props.repoPath, files: [filePath] });
+			await repoRpc(props.repoPath, "git_unstage_files", { path: props.repoPath, files: [filePath] });
 		} catch (err) {
 			appLogger.error("git", `Failed to unstage ${filePath}`, err);
 			toastsStore.add("Unstage failed", `Could not unstage "${filePath}": ${String(err)}`, "error", true);
@@ -254,7 +254,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 	async function discardFile(filePath: string) {
 		if (!props.repoPath) return;
 		try {
-			await invoke("git_discard_files", { path: props.repoPath, files: [filePath] });
+			await repoRpc(props.repoPath, "git_discard_files", { path: props.repoPath, files: [filePath] });
 			// git restore only touches the working tree (not .git/index) for tracked
 			// modified files, so repo_watcher routes via WORKING_TREE_DEBOUNCE
 			// (1500ms) instead of GIT_STATE_DEBOUNCE (500ms). Bump revision so the
@@ -271,7 +271,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 		const files = unstaged().map((f) => f.path);
 		if (files.length === 0) return;
 		try {
-			await invoke("git_stage_files", { path: props.repoPath, files });
+			await repoRpc(props.repoPath, "git_stage_files", { path: props.repoPath, files });
 		} catch (err) {
 			appLogger.error("git", "Failed to stage all files", err);
 			toastsStore.add("Stage failed", `Could not stage all files: ${String(err)}`, "error", true);
@@ -283,7 +283,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 		const files = staged().map((f) => f.path);
 		if (files.length === 0) return;
 		try {
-			await invoke("git_unstage_files", { path: props.repoPath, files });
+			await repoRpc(props.repoPath, "git_unstage_files", { path: props.repoPath, files });
 		} catch (err) {
 			appLogger.error("git", "Failed to unstage all files", err);
 			toastsStore.add("Unstage failed", `Could not unstage all files: ${String(err)}`, "error", true);
@@ -298,7 +298,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 			.map((f) => f.path);
 		if (files.length === 0) return;
 		try {
-			await invoke("git_discard_files", { path: props.repoPath, files });
+			await repoRpc(props.repoPath, "git_discard_files", { path: props.repoPath, files });
 			repositoriesStore.bumpRevision(props.repoPath); // see discardFile (#1378-ce1c)
 		} catch (err) {
 			appLogger.error("git", "Failed to discard all files", err);
@@ -361,7 +361,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 		const files = getSelectedInSection("unstaged");
 		if (files.length === 0) return;
 		try {
-			await invoke("git_stage_files", { path: props.repoPath, files });
+			await repoRpc(props.repoPath, "git_stage_files", { path: props.repoPath, files });
 			setSelectedKeys(new Set<string>());
 		} catch (err) {
 			appLogger.error("git", "Failed to stage selected files", err);
@@ -374,7 +374,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 		const files = getSelectedInSection("staged");
 		if (files.length === 0) return;
 		try {
-			await invoke("git_unstage_files", { path: props.repoPath, files });
+			await repoRpc(props.repoPath, "git_unstage_files", { path: props.repoPath, files });
 			setSelectedKeys(new Set<string>());
 		} catch (err) {
 			appLogger.error("git", "Failed to unstage selected files", err);
@@ -390,7 +390,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 		});
 		if (files.length === 0) return;
 		try {
-			await invoke("git_discard_files", { path: props.repoPath, files });
+			await repoRpc(props.repoPath, "git_discard_files", { path: props.repoPath, files });
 			setSelectedKeys(new Set<string>());
 			repositoriesStore.bumpRevision(props.repoPath); // see discardFile (#1378-ce1c)
 		} catch (err) {
@@ -464,7 +464,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 				action: async () => {
 					if (!props.repoPath) return;
 					try {
-						await invoke("add_to_gitignore", { repoPath: props.repoPath, pattern: file.path });
+						await repoRpc(props.repoPath, "add_to_gitignore", { repoPath: props.repoPath, pattern: file.path });
 					} catch (err) {
 						appLogger.error("git", "Failed to add to .gitignore", err);
 					}
@@ -539,7 +539,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 		setCommitError(null);
 		setCommitSuccess(false);
 		try {
-			await invoke<string>("git_commit", {
+			await repoRpc<string>(repoPath, "git_commit", {
 				path: repoPath,
 				message: msg,
 				amend: isAmend() || null,
@@ -566,7 +566,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 			savedDraftMsg = commitMsg();
 			if (props.repoPath) {
 				try {
-					const log = await invoke<CommitLogEntry[]>("get_commit_log", {
+					const log = await repoRpc<CommitLogEntry[]>(props.repoPath, "get_commit_log", {
 						path: props.repoPath,
 						count: 1,
 					});

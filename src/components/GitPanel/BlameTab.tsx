@@ -1,8 +1,8 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { type Component, createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
-import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
+import { repoRpc } from "../../utils/repoRpc";
 import { formatRelativeTime } from "../../utils/time";
 import s from "./BlameTab.module.css";
 
@@ -62,7 +62,7 @@ export const BlameTab: Component<BlameTabProps> = (props) => {
 			cancelled = true;
 		});
 
-		invoke<BlameLine[]>("get_file_blame", { path: repoPath, file: filePath })
+		repoRpc<BlameLine[]>(repoPath, "get_file_blame", { path: repoPath, file: filePath })
 			.then((result) => {
 				if (cancelled) return;
 				setLines(result);

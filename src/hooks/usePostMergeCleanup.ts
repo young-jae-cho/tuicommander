@@ -1,7 +1,7 @@
 import type { StepId } from "../components/PostMergeCleanupDialog/PostMergeCleanupDialog";
-import { invoke } from "../invoke";
 import { appLogger } from "../stores/appLogger";
 import { repositoriesStore } from "../stores/repositories";
+import { repoRpc } from "../utils/repoRpc";
 
 export interface CleanupConfig {
 	repoPath: string;
@@ -52,7 +52,7 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
 					// Addressed by workspace id: the checkout to dispose of is the row
 					// the user is cleaning up, which a branch cannot name once two
 					// workspaces share one.
-					await invoke("finalize_merged_worktree", {
+					await repoRpc(repoPath, "finalize_merged_worktree", {
 						repoPath,
 						workspaceId,
 						action: config.worktreeAction,
@@ -62,14 +62,14 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
 				}
 
 				case "switch": {
-					await invoke("switch_branch", {
+					await repoRpc(repoPath, "switch_branch", {
 						repoPath,
 						branchName: baseBranch,
 						force: false,
 						stash: true,
 					});
 					if (config.unstash) {
-						await invoke("run_git_command", {
+						await repoRpc(repoPath, "run_git_command", {
 							path: repoPath,
 							args: ["stash", "pop"],
 						});
@@ -78,7 +78,7 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
 				}
 
 				case "pull":
-					await invoke("run_git_command", {
+					await repoRpc(repoPath, "run_git_command", {
 						path: repoPath,
 						args: ["pull", "--ff-only"],
 					});
@@ -87,7 +87,7 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
 				case "delete-local":
 					await config.closeTerminalsForBranch(repoPath, workspaceId);
 					try {
-						await invoke("delete_local_branch", {
+						await repoRpc(repoPath, "delete_local_branch", {
 							repoPath,
 							branchName,
 							workspaceId,
@@ -111,7 +111,7 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
 
 				case "delete-remote":
 					try {
-						await invoke("run_git_command", {
+						await repoRpc(repoPath, "run_git_command", {
 							path: repoPath,
 							args: ["push", "origin", "--delete", branchName],
 						});
