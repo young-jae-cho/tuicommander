@@ -2905,14 +2905,8 @@ fn the_silence_timer_cannot_idle_a_protocol_held_turn() {
                 Some(std::time::Instant::now() - AGENT_READY_CONFIRM);
         }
 
-        let transition = try_timer_idle_transition(
-            &state,
-            &silence,
-            session_id,
-            screen,
-            Some("codex"),
-            Some(0),
-        );
+        let transition =
+            try_timer_idle_transition(&state, &silence, session_id, screen, Some("codex"), Some(0));
 
         assert!(
             !transition.transitioned,
@@ -9335,9 +9329,7 @@ fn submitted_input_lifecycle_peer_injection_starts_new_turn_and_clears_completio
     completed_agent_session(&state, "completed");
     state.pending_injections.insert(
         "completed".to_string(),
-        std::collections::VecDeque::from([crate::state::PendingInjection::notice(
-            "follow up",
-        )]),
+        std::collections::VecDeque::from([crate::state::PendingInjection::notice("follow up")]),
     );
 
     flush_one_pending_as_submitted(&state, "completed");
@@ -9966,10 +9958,10 @@ fn a_queue_that_cannot_drain_reports_the_agent_not_the_queue() {
     // Unconfirmed idle: exactly what a ready-screen agent looks like before its
     // adapter has proof. `flush_pending_injections` is gated on the same
     // predicate, so this queue cannot move until that changes.
-    state
-        .session_maps
-        .silence_states
-        .insert("submit-unready".to_string(), Arc::new(Mutex::new(SilenceState::new())));
+    state.session_maps.silence_states.insert(
+        "submit-unready".to_string(),
+        Arc::new(Mutex::new(SilenceState::new())),
+    );
     state
         .pending_injections
         .entry("submit-unready".to_string())
@@ -10007,7 +9999,9 @@ fn every_parked_entry_is_observable_and_drainable() {
             .entry("queue-visible".to_string())
             .or_default();
         queue.push_back(crate::state::PendingInjection::notice(PEER_MAIL_WAKE));
-        queue.push_back(crate::state::PendingInjection::initial_prompt("do the task"));
+        queue.push_back(crate::state::PendingInjection::initial_prompt(
+            "do the task",
+        ));
         queue.push_back(crate::state::PendingInjection::user_command("git status"));
     }
 
@@ -12342,12 +12336,17 @@ fn codex_notify_turn_complete_emits_the_idle_bytes_the_state_machine_accepts() {
     );
 
     // Pull the printf literal out of the artifact instead of restating it.
-    let start = script.find("printf '").expect("script must printf a marker") + "printf '".len();
+    let start = script
+        .find("printf '")
+        .expect("script must printf a marker")
+        + "printf '".len();
     let end = start
         + script[start..]
             .find('\'')
             .expect("unterminated printf literal");
-    let decoded = script[start..end].replace("\\033", "\x1b").replace("\\\\", "\\");
+    let decoded = script[start..end]
+        .replace("\\033", "\x1b")
+        .replace("\\\\", "\\");
 
     // That exact byte sequence, through the real chunk path, must close a turn
     // a hook-busy is holding — the thing AC6(c) actually asserts.
@@ -12393,7 +12392,10 @@ fn codex_notify_turn_complete_emits_the_idle_bytes_the_state_machine_accepts() {
         "the notify script's own bytes must drive the session idle"
     );
     let silence = silence.lock();
-    assert!(silence.explicit_idle(), "idle must be Protocol rank, not screen");
+    assert!(
+        silence.explicit_idle(),
+        "idle must be Protocol rank, not screen"
+    );
     assert!(!silence.hook_busy());
 }
 

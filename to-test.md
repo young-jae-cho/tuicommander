@@ -14,6 +14,16 @@
 - [ ] [HUMAN] After restarting `make dev`, launch Codex 0.154, complete a turn, and confirm its payload contains `type`, `turn-id`, and `last-assistant-message`, OSC 7770 idle reaches the PTY, and the existing Codex `notify` command receives the unchanged JSON argument.
 - [ ] On a machine that has `fish` installed, run `cargo nextest run --lib -E 'test(shell_integration)'`. The `tests::launch` matrix runs the inject / skip-when-user-passed / setting-off cases against every shell it finds, but fish is absent from this Mac and from the `ubuntu-22.04` CI image, so the fish half of that matrix has never executed — the fish wrapper is covered only by the structural `fish_wrappers_cover_inject_user_override_skip_and_setting_off` grep. Nothing to change if it passes; delete this item.
 
+## Remote-connection auth fix (`feat-decouple-front-back-ends` @ d45f5c6d) — **Rust + GUI, needs a rebuild AND a redeployed daemon**
+
+The fix signs remote HTTP with `Authorization: Basic` and remote SSE/WebSocket with `?token=<session_token>` (token fetched from the daemon's new `GET /api/session-token`). Built on this Mac (arm64, adhoc-signed `.app` at `src-tauri/target/release/bundle/macos/TUICommander.app`). `make check` is green for the fix (tsc/biome/cycles/rustfmt/clippy pass; the fix's own `remote_connection::*` + `mcp_http::tests::session_token_route_*` tests pass). Blocked end-to-end because the **running daemon on 10.255.150.89:9877 is an old binary** (`protocol_version:1`, `/api/session-token` returns 404), so the token path cannot be exercised until it is rebuilt from this branch and restarted.
+
+- [ ] [HUMAN] **Server prerequisite:** rebuild `tuic-remote` from `feat-decouple-front-back-ends` and restart `tuic-remote.service`, then confirm `curl -u admin:*** http://10.255.150.89:9877/api/session-token` returns a `{"token":...}` body (200, not 404). Without this the terminal WS / SSE still 401.
+- [ ] [HUMAN] After launching the built `.app`: Settings -> Connections -> Add (Direct `http://10.255.150.89:9877`, user `admin`, password `tuic-remote-dev`) -> Connect -> status "Connected". Add a server-bound repo, open a terminal, confirm it is **interactive** (I/O works) and that diff/file-browser panels + the live event stream update with **no 401 anywhere**. This is the real test of the WS `?token=` path.
+- [ ] [HUMAN] Confirm the typed password lands in the Mac keyring (`remote-connection/<id>/password`) and NOT in `connections.json` — inspect the file after saving.
+- **Build gotcha (this Apple Silicon Mac):** `whisper-rs-sys` cmake configure **hangs** on ggml's ARM SVE/SME `check_cxx_source_runs` (the test binary spins forever; Apple Silicon lacks SVE/SME). Unblocked by `kill -9` on the stuck `cmTC_*` process so cmake records the feature as unsupported and proceeds. A durable fix is forcing `GGML_NATIVE=OFF` via `CMAKE_PROJECT_TOP_LEVEL_INCLUDES`.
+- **Build gotcha (DMG only):** `make build` fails at `bundle_dmg.sh` (`hdiutil`/DiskArbitration in a headless session) AFTER `TUICommander.app` is already bundled. The `.app` is complete and runnable; only the optional `.dmg` is skipped. A stray `/Volumes/dmg.*` mount may need `hdiutil detach -force`.
+
 Features to test when TUICommander is more usable.
 
 **This file is the only tracker for anything a human must verify.** Never open a

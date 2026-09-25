@@ -1,8 +1,8 @@
 import { appLogger } from "../../stores/appLogger";
 import { isTauri, rpc } from "../../transport";
 import { getRemoteAuthUsername } from "../../transportRuntime";
-import { getSessionToken } from "../../utils/remoteAuth";
 import { isPerfDebug } from "../../utils/perfDebug";
+import { getSessionToken } from "../../utils/remoteAuth";
 
 export interface TerminalTransport {
 	subscribe(onFrame: (data: ArrayBuffer) => void): Promise<void>;
@@ -41,11 +41,7 @@ export function toBinaryPayload(data: unknown): ArrayBuffer | null {
 	return null;
 }
 
-export function createTransport(
-	sessionId: string,
-	baseUrl?: string,
-	connectionId?: string,
-): TerminalTransport {
+export function createTransport(sessionId: string, baseUrl?: string, connectionId?: string): TerminalTransport {
 	if (baseUrl && connectionId) return new WsTransport(sessionId, baseUrl, connectionId);
 	if (baseUrl) return new WsTransport(sessionId, baseUrl);
 	return isTauri() ? new TauriTransport(sessionId) : new WsTransport(sessionId);

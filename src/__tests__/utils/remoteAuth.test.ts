@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// The transport reads the password from the keyring through the Tauri `invoke`
-// seam; mock it so the cache logic is observable without a backend.
+// The transport reads the password from the keyring through the injected
+// `invoke` seam (transportRuntime), not a static import — so we wire the seam
+// with a mock and the cache logic stays observable without a backend.
 const invokeMock = vi.fn();
-vi.mock("../../invoke", () => ({ invoke: (...args: unknown[]) => invokeMock(...args) }));
 
+import { setRemoteInvoke } from "../../transportRuntime";
 import {
 	clearConnectionAuth,
 	getBasicAuthHeader,
@@ -15,11 +16,9 @@ import {
 describe("remoteAuth credential plumbing", () => {
 	beforeEach(() => {
 		invokeMock.mockReset();
+		setRemoteInvoke(invokeMock as unknown as <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>);
 		clearConnectionAuth("c1");
-		vi.stubGlobal(
-			"fetch",
-			vi.fn().mockResolvedValue({ ok: true, json: async () => ({ token: "tok-xyz" }) }),
-		);
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ token: "tok-xyz" }) }));
 	});
 
 	it("reads the password from the keyring and encodes it as Basic", async () => {

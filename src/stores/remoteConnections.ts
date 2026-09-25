@@ -1,9 +1,9 @@
 import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
-import { setRemoteBaseUrlLookup, setRemoteAuthUsernameLookup } from "../transportRuntime";
-import { startRemoteEventBridge } from "../utils/remoteEventBridge";
+import { setRemoteAuthUsernameLookup, setRemoteBaseUrlLookup, setRemoteInvoke } from "../transportRuntime";
 import { clearConnectionAuth } from "../utils/remoteAuth";
+import { startRemoteEventBridge } from "../utils/remoteEventBridge";
 import { appLogger } from "./appLogger";
 import { tunnelsStore } from "./tunnels";
 
@@ -349,6 +349,7 @@ function createRemoteConnectionsStore() {
 }
 
 export const remoteConnectionsStore = createRemoteConnectionsStore();
+setRemoteInvoke(invoke);
 setRemoteBaseUrlLookup((connectionId) => remoteConnectionsStore.getBaseUrl(connectionId));
 setRemoteAuthUsernameLookup((connectionId) => {
 	const st = remoteConnectionsStore.getConnectionState(connectionId);

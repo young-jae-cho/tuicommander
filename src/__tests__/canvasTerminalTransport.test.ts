@@ -400,11 +400,7 @@ describe("canvasTerminalTransport", () => {
 			await transport.invoke("resize_pty", { sessionId: "session-1", rows: 24, cols: 80 });
 
 			// The connectionId is what makes rpc() sign + route to the remote daemon.
-			expect(rpc).toHaveBeenCalledWith(
-				"resize_pty",
-				{ sessionId: "session-1", rows: 24, cols: 80 },
-				"conn-abc",
-			);
+			expect(rpc).toHaveBeenCalledWith("resize_pty", { sessionId: "session-1", rows: 24, cols: 80 }, "conn-abc");
 		});
 	});
 });

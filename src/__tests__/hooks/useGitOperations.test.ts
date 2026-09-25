@@ -2152,12 +2152,7 @@ describe("useGitOperations", () => {
 			await noPromptGitOps.handleAddWorktree("/repo");
 
 			// Should use first baseRef option as the base
-			expect(mockRepo.createWorktree).toHaveBeenCalledWith(
-				"/repo",
-				"cool-ripley-007",
-				true,
-				"develop",
-			);
+			expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "cool-ripley-007", true, "develop");
 		});
 	});
 
@@ -2416,7 +2411,6 @@ describe("useGitOperations", () => {
 			const termId = branch!.terminals[0];
 			expect(terminalsStore.get(termId)?.pendingInitCommand).toBeNull();
 		});
-
 	});
 
 	describe("executeRunCommand", () => {

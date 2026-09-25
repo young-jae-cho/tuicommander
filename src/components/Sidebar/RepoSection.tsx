@@ -499,9 +499,7 @@ export const BranchItem: Component<{
 							<Show when={label()}>
 								<span
 									class={`${s.lifecycleBadge} ${
-										status().removalSafety !== "safe"
-											? s.lifecycleRisk
-											: s.lifecycleMerged
+										status().removalSafety !== "safe" ? s.lifecycleRisk : s.lifecycleMerged
 									}`}
 									title={title()}
 								>

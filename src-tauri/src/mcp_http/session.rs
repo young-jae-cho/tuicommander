@@ -2317,9 +2317,7 @@ mod tests {
             .pending_injections
             .entry(session_id.to_string())
             .or_default()
-            .push_back(crate::state::PendingInjection::notice(
-                "queued message",
-            ));
+            .push_back(crate::state::PendingInjection::notice("queued message"));
 
         let (done_tx, done_rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {

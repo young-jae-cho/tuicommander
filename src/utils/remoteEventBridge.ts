@@ -8,8 +8,8 @@
 import { appLogger, previewLogPayload } from "../stores/appLogger";
 import { repositoriesStore } from "../stores/repositories";
 import { getRemoteAuthUsername } from "../transportRuntime";
-import { getSessionToken } from "./remoteAuth";
 import type { RepoChangeKind } from "../types";
+import { getSessionToken } from "./remoteAuth";
 
 /**
  * Start an SSE bridge to a remote daemon's /events endpoint.

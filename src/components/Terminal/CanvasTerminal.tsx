@@ -5,9 +5,9 @@ import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
-import { getRemoteBaseUrl } from "../../transportRuntime";
 import { reclaimParkedTerminal } from "../../stores/terminalOwnership";
 import { terminalsStore } from "../../stores/terminals";
+import { getRemoteBaseUrl } from "../../transportRuntime";
 import { filterMatchesToBlock } from "../../utils/blockSearchFilter";
 import { writeClipboard } from "../../utils/clipboard";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
@@ -2129,9 +2129,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// WebSocket and its RPCs must be routed + signed for that connection.
 		// Local repos resolve to (undefined, undefined) → the local transport.
 		const termData = terminalsStore.get(props.terminalId);
-		const repoConnectionId = termData?.repoPath
-			? repositoriesStore.getConnectionId(termData.repoPath)
-			: undefined;
+		const repoConnectionId = termData?.repoPath ? repositoriesStore.getConnectionId(termData.repoPath) : undefined;
 		const remoteBaseUrl = repoConnectionId ? getRemoteBaseUrl(repoConnectionId) : undefined;
 		transport = createTransport(props.sessionId, remoteBaseUrl, repoConnectionId);
 		invokeRef = (cmd, args) => transport!.invoke(cmd, args);

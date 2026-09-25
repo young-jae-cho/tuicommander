@@ -19,7 +19,7 @@
  * at most once per connection per session.
  */
 
-import { invoke } from "../invoke";
+import { remoteInvoke } from "../transportRuntime";
 
 /** connectionId -> "user:password" */
 const basicAuthCache = new Map<string, string>();
@@ -31,14 +31,14 @@ const tokenCache = new Map<string, string>();
  * in-memory cache. Called by the Connections UI on save.
  */
 export async function setConnectionPassword(connectionId: string, password: string): Promise<void> {
-	await invoke("save_remote_connection_password", { id: connectionId, password });
+	await remoteInvoke()("save_remote_connection_password", { id: connectionId, password });
 	basicAuthCache.delete(connectionId);
 	tokenCache.delete(connectionId);
 }
 
 /** Whether a password is stored for the connection (keyring-backed). */
 export async function hasConnectionPassword(connectionId: string): Promise<boolean> {
-	return invoke<boolean>("has_remote_connection_password", { id: connectionId });
+	return remoteInvoke()<boolean>("has_remote_connection_password", { id: connectionId });
 }
 
 /** Drop cached credentials for a connection (on disconnect/delete). */
@@ -52,16 +52,13 @@ export function clearConnectionAuth(connectionId: string): void {
  * password from the keyring on first use. Returns undefined when no password is
  * stored (e.g. a daemon with auth disabled), so callers omit the header.
  */
-export async function getBasicAuthHeader(
-	connectionId: string,
-	username: string,
-): Promise<string | undefined> {
+export async function getBasicAuthHeader(connectionId: string, username: string): Promise<string | undefined> {
 	const cached = basicAuthCache.get(connectionId);
 	if (cached !== undefined) return `Basic ${cached}`;
 
 	let password: string | null;
 	try {
-		password = await invoke<string | null>("read_remote_connection_password", { id: connectionId });
+		password = await remoteInvoke()<string | null>("read_remote_connection_password", { id: connectionId });
 	} catch {
 		// Command unavailable (older backend) — treat as "no stored password".
 		return undefined;

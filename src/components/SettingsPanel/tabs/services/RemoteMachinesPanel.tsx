@@ -6,8 +6,8 @@ import {
 	type RemoteTransport,
 	remoteConnectionsStore,
 } from "../../../../stores/remoteConnections";
-import s from "../../Settings.module.css";
 import { setConnectionPassword } from "../../../../utils/remoteAuth";
+import s from "../../Settings.module.css";
 
 // ---------------------------------------------------------------------------
 // Remote Machines panel
