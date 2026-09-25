@@ -10,6 +10,7 @@ import { appLogger } from "../../stores/appLogger";
 import { notificationsStore } from "../../stores/notifications";
 import { paneLayoutStore } from "../../stores/paneLayout";
 import { rateLimitStore } from "../../stores/ratelimit";
+import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
 import { type AwaitingInputType, isShellState, terminalsStore } from "../../stores/terminals";
 import { toastsStore } from "../../stores/toasts";
@@ -780,6 +781,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
 	const existingSessionId = terminalsStore.get(props.id)?.sessionId;
 	if (existingSessionId) {
 		sessionId = existingSessionId;
+		// A reconnected remote session's per-session RPCs (resize, kitty flags,
+		// write) must route to its daemon too. The spawn-time map is in-memory and
+		// empty after a reload, so re-seed it from the owning repo's connectionId
+		// before any RPC touches this sessionId. Local repos -> undefined -> local.
+		const repoPath = terminalsStore.get(props.id)?.repoPath;
+		const existingConnId = repoPath ? repositoriesStore.getConnectionId(repoPath) : undefined;
+		if (existingConnId) pty.rememberSessionConnection(existingSessionId, existingConnId);
 		setCurrentSessionId(existingSessionId);
 		// attachSessionListeners syncs shell state from Rust via get_shell_state
 		attachSessionListeners(existingSessionId).catch((err) =>
@@ -835,16 +843,23 @@ export const Terminal: Component<TerminalProps> = (props) => {
 			if (!reconnected) {
 				appLogger.debug("terminal", `initSession(${props.id}) — creating FRESH PTY session (no prior sessionId)`);
 				const termData = terminalsStore.get(props.id);
-				sessionId = await pty.createSession({
-					rows: grid.rows,
-					cols: grid.cols,
-					shell: settingsStore.state.shell ?? null,
-					cwd: props.cwd || null,
-					tuic_session: termData?.tuicSession ?? null,
-					alias: termData?.alias ?? null,
-					env: agentConfigsStore.getEnvFlags("claude"),
-					agent_type: termData?.pendingInitCommand ? (termData.agentType ?? null) : null,
-				});
+				// A terminal owned by a remote repo must spawn on that daemon, not the
+				// local backend — the same connectionId CanvasTerminal uses to route the
+				// stream. Local repos resolve to undefined -> local spawn, as before.
+				const connectionId = termData?.repoPath ? repositoriesStore.getConnectionId(termData.repoPath) : undefined;
+				sessionId = await pty.createSession(
+					{
+						rows: grid.rows,
+						cols: grid.cols,
+						shell: settingsStore.state.shell ?? null,
+						cwd: props.cwd || null,
+						tuic_session: termData?.tuicSession ?? null,
+						alias: termData?.alias ?? null,
+						env: agentConfigsStore.getEnvFlags("claude"),
+						agent_type: termData?.pendingInitCommand ? (termData.agentType ?? null) : null,
+					},
+					connectionId,
+				);
 				// The component can unmount during the await above (tab churn while
 				// an agent like grok rapidly toggles visibility). setCurrentSessionId
 				// then recomputes the now-disposed <Show when={_currentSessionId()}>

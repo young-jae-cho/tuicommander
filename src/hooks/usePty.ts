@@ -64,6 +64,33 @@ export interface QueuedCommand {
 	kind: "user_command" | "notice" | "initial_prompt";
 }
 
+/**
+ * sessionId -> owning remote connection id.
+ *
+ * A terminal owned by a remote repo must have its whole PTY lifecycle (create,
+ * write, resize, close, agent-command queue, kitty flags) routed to that
+ * daemon, not the local backend. Only the spawn site knows the connectionId, so
+ * we record it here at create time and every per-session RPC below resolves it
+ * back out of the sessionId — which keeps the ~20 existing call sites (they
+ * pass only a sessionId) unchanged. Local sessions are absent from the map,
+ * resolving to `undefined` -> the local transport, exactly as before.
+ */
+const sessionConnections = new Map<string, string>();
+
+/** The connectionId a session's RPCs must be routed/signed for (undefined = local). */
+function connFor(sessionId: string): string | undefined {
+	return sessionConnections.get(sessionId);
+}
+
+/**
+ * Register a session's owning connection. Called at spawn time and again when
+ * a tab reconnects to a pre-existing sessionId after a reload (the map is
+ * in-memory, so a restored remote tab must re-seed it before its RPCs route).
+ */
+export function rememberSessionConnection(sessionId: string, connectionId: string): void {
+	sessionConnections.set(sessionId, connectionId);
+}
+
 /** Active session info returned by list_active_sessions */
 export interface ActiveSessionInfo {
 	session_id: string;
@@ -95,33 +122,43 @@ export function usePty() {
 		}
 	}
 
-	/** Create a new PTY session */
-	async function createSession(config: PtyConfig): Promise<string> {
+	/** Create a new PTY session. `connectionId` routes the spawn (and every later
+	 *  RPC for the returned sessionId) to a remote daemon; omit it for local. */
+	async function createSession(config: PtyConfig, connectionId?: string): Promise<string> {
 		const requestedId = preRegisterBrowserSessionId();
-		const sessionId = await rpc<string>("create_pty", {
-			config: requestedId ? { ...config, session_id: requestedId } : config,
-		});
+		const sessionId = await rpc<string>(
+			"create_pty",
+			{ config: requestedId ? { ...config, session_id: requestedId } : config },
+			connectionId,
+		);
 		browserCreatedSessions.add(sessionId);
+		if (connectionId) sessionConnections.set(sessionId, connectionId);
 		return sessionId;
 	}
 
-	/** Create a PTY session with a git worktree */
+	/** Create a PTY session with a git worktree (remote-routed when connectionId set). */
 	async function createSessionWithWorktree(
 		ptyConfig: PtyConfig,
 		worktreeConfig: WorktreeConfig,
+		connectionId?: string,
 	): Promise<WorktreeResult> {
 		const requestedId = preRegisterBrowserSessionId();
-		const result = await rpc<WorktreeResult>("create_pty_with_worktree", {
-			pty_config: requestedId ? { ...ptyConfig, session_id: requestedId } : ptyConfig,
-			worktree_config: worktreeConfig,
-		});
+		const result = await rpc<WorktreeResult>(
+			"create_pty_with_worktree",
+			{
+				pty_config: requestedId ? { ...ptyConfig, session_id: requestedId } : ptyConfig,
+				worktree_config: worktreeConfig,
+			},
+			connectionId,
+		);
 		browserCreatedSessions.add(result.session_id);
+		if (connectionId) sessionConnections.set(result.session_id, connectionId);
 		return result;
 	}
 
 	/** Write raw data to a PTY session */
 	async function write(sessionId: string, data: string): Promise<void> {
-		await rpc("write_pty", { sessionId, data });
+		await rpc("write_pty", { sessionId, data }, connFor(sessionId));
 	}
 
 	/** Send or insert text through the central agent-aware command path. */
@@ -135,48 +172,49 @@ export function usePty() {
 	 *  busy→idle transition, so a running turn is never steered.
 	 *  Rejects for non-agent sessions — a plain shell has no composer to wait for. */
 	async function enqueueCommand(sessionId: string, text: string): Promise<EnqueuedCommand> {
-		return await rpc<EnqueuedCommand>("enqueue_agent_command", { sessionId, text });
+		return await rpc<EnqueuedCommand>("enqueue_agent_command", { sessionId, text }, connFor(sessionId));
 	}
 
 	/** Drop every command still queued for a session. Returns how many were dropped. */
 	async function clearQueuedCommands(sessionId: string): Promise<number> {
-		return await rpc<number>("clear_queued_agent_commands", { sessionId });
+		return await rpc<number>("clear_queued_agent_commands", { sessionId }, connFor(sessionId));
 	}
 
 	/** The commands still queued for a session, in delivery order. */
 	async function listQueuedCommands(sessionId: string): Promise<QueuedCommand[]> {
-		return await rpc<QueuedCommand[]>("list_queued_agent_commands", { sessionId });
+		return await rpc<QueuedCommand[]>("list_queued_agent_commands", { sessionId }, connFor(sessionId));
 	}
 
 	/** Drop one queued command. False when it was already typed. */
 	async function removeQueuedCommand(sessionId: string, commandId: number): Promise<boolean> {
-		return await rpc<boolean>("remove_queued_agent_command", { sessionId, commandId });
+		return await rpc<boolean>("remove_queued_agent_command", { sessionId, commandId }, connFor(sessionId));
 	}
 
 	/** Resize a PTY session */
 	async function resize(sessionId: string, rows: number, cols: number): Promise<void> {
-		await rpc("resize_pty", { sessionId, rows, cols });
+		await rpc("resize_pty", { sessionId, rows, cols }, connFor(sessionId));
 	}
 
 	/** Pause PTY reader thread (flow control) */
 	async function pause(sessionId: string): Promise<void> {
-		await rpc("pause_pty", { sessionId });
+		await rpc("pause_pty", { sessionId }, connFor(sessionId));
 	}
 
 	/** Resume PTY reader thread (flow control) */
 	async function resume(sessionId: string): Promise<void> {
-		await rpc("resume_pty", { sessionId });
+		await rpc("resume_pty", { sessionId }, connFor(sessionId));
 	}
 
 	/** Query current kitty keyboard protocol flags for a session (0 = not active) */
 	async function getKittyFlags(sessionId: string): Promise<number> {
-		return await rpc<number>("get_kitty_flags", { sessionId });
+		return await rpc<number>("get_kitty_flags", { sessionId }, connFor(sessionId));
 	}
 
 	/** Close a PTY session */
 	async function close(sessionId: string, cleanupWorktree: boolean = false): Promise<void> {
 		clearShellFamilyCache(sessionId);
-		await rpc("close_pty", { sessionId, cleanupWorktree });
+		await rpc("close_pty", { sessionId, cleanupWorktree }, connFor(sessionId));
+		sessionConnections.delete(sessionId);
 	}
 
 	/** Get orchestrator stats */
@@ -208,6 +246,7 @@ export function usePty() {
 		canSpawn,
 		createSession,
 		createSessionWithWorktree,
+		rememberSessionConnection,
 		write,
 		sendCommand,
 		enqueueCommand,

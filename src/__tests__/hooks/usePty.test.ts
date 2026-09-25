@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../mocks/tauri";
 import { browserCreatedSessions } from "../../hooks/useAppInit";
 import { usePty } from "../../hooks/usePty";
+import { setRemoteAuthUsernameLookup, setRemoteBaseUrlLookup, setRemoteInvoke } from "../../transportRuntime";
 import { mockInvoke } from "../mocks/tauri";
 
 describe("usePty", () => {
@@ -303,6 +304,63 @@ describe("usePty", () => {
 			mockInvoke.mockResolvedValueOnce([]);
 			const result = await pty.listActiveSessions();
 			expect(result).toEqual([]);
+		});
+	});
+
+	describe("remote connection routing (create -> per-session RPCs)", () => {
+		let fetchMock: ReturnType<typeof vi.fn>;
+		const realFetch = globalThis.fetch;
+
+		beforeEach(() => {
+			// Browser mode so rpc() honors the connectionId (Tauri IPC is local-only).
+			(globalThis as Record<string, unknown>).__TAURI_SHIM__ = true;
+			// A connected remote whose base URL + username the transport resolves.
+			setRemoteBaseUrlLookup((id) => (id === "conn-1" ? "http://remote.test:9877" : undefined));
+			setRemoteAuthUsernameLookup((id) => (id === "conn-1" ? "admin" : undefined));
+			// getBasicAuthHeader reads the keyring through the injected invoke seam.
+			setRemoteInvoke((async (cmd: string) =>
+				cmd === "read_remote_connection_password" ? "s3cret" : undefined) as never);
+			fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+				const body = JSON.parse((init?.body as string) ?? "{}");
+				const sessionId = body.session_id ?? body.config?.session_id ?? "remote-sess-1";
+				return new Response(JSON.stringify({ session_id: sessionId }), {
+					status: 201,
+					headers: { "content-type": "application/json" },
+				});
+			});
+			globalThis.fetch = fetchMock as unknown as typeof fetch;
+		});
+
+		afterEach(() => {
+			delete (globalThis as Record<string, unknown>).__TAURI_SHIM__;
+			globalThis.fetch = realFetch;
+			setRemoteBaseUrlLookup(() => undefined);
+			setRemoteAuthUsernameLookup(() => undefined);
+		});
+
+		it("routes a session's later write to the daemon it was created on", async () => {
+			const config = { cwd: "/srv/repo", rows: 24, cols: 80, shell: null };
+			const sessionId = await pty.createSession(config, "conn-1");
+			// The create itself hit the remote base URL.
+			expect(fetchMock.mock.calls[0][0]).toContain("http://remote.test:9877/sessions");
+
+			fetchMock.mockClear();
+			await pty.write(sessionId, "ls\r");
+			// The write — which only knows the sessionId — must resolve the same
+			// connection and go to the remote, not the local origin. This is the
+			// regression: before the map, remote sessions spawned/wrote locally.
+			const url = fetchMock.mock.calls[0][0] as string;
+			expect(url).toContain("http://remote.test:9877");
+			expect(url).not.toContain("localhost:3000");
+		});
+
+		it("keeps a local session (no connectionId) on the local origin", async () => {
+			const config = { cwd: "/local/repo", rows: 24, cols: 80, shell: null };
+			const sessionId = await pty.createSession(config);
+			fetchMock.mockClear();
+			await pty.write(sessionId, "ls\r");
+			const url = fetchMock.mock.calls[0][0] as string;
+			expect(url).not.toContain("remote.test");
 		});
 	});
 });
