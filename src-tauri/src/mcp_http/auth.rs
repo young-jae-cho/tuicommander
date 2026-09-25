@@ -210,6 +210,17 @@ pub async fn basic_auth_middleware(
     mut req: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
+    // CORS preflight carries no credentials by spec (the browser never sends
+    // Authorization on an OPTIONS). CorsLayer is applied *below* this middleware,
+    // so without this short-circuit every custom-header request — including the
+    // `Authorization: Basic` the Remote Connection Manager now signs with — fails
+    // its preflight with 401, and the WebView surfaces it as `TypeError: Load
+    // failed`. Let the preflight through so CorsLayer can answer it; it never
+    // reaches a handler, so it must not be marked Authenticated.
+    if *req.method() == axum::http::Method::OPTIONS {
+        return next.run(req).await;
+    }
+
     // Mark the request as authenticated for downstream route guards
     // (require_local_or_auth). Reaching a handler implies the request passed
     // one of the auth gates below (loopback/LAN bypass, session cookie, URL
@@ -734,6 +745,56 @@ mod tests {
             .unwrap();
         assert!(cookie.contains("tui-session=test-token"), "got {cookie}");
         assert!(cookie.contains("Max-Age=86400"), "got {cookie}");
+    }
+
+    /// A CORS preflight (`OPTIONS`) never carries credentials — the browser
+    /// strips them by spec. CorsLayer sits *below* this middleware, so if the
+    /// auth check ran on the preflight it would 401, the browser would abort the
+    /// real request, and every custom-header call (the Remote Connection
+    /// Manager's `Authorization: Basic`) would die as `TypeError: Load failed`.
+    /// The preflight must reach the handler; a real unauthenticated GET must
+    /// still 401 — the bypass is scoped to OPTIONS, not a general hole.
+    #[tokio::test]
+    async fn cors_preflight_bypasses_auth_but_get_still_401s() {
+        use tower::ServiceExt;
+
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+
+        let app = axum::Router::new()
+            .route("/repo/info", axum::routing::any(|| async { "handler" }))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                basic_auth_middleware,
+            ));
+
+        // Public address: no loopback/LAN bypass may carry it.
+        let public = SocketAddr::from(([203, 0, 113, 5], 51234));
+
+        let preflight = Request::options("/repo/info")
+            .header(header::ORIGIN, "tauri://localhost")
+            .header(header::ACCESS_CONTROL_REQUEST_METHOD, "GET")
+            .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "authorization")
+            .extension(ConnectInfo(public))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(preflight).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "an unauthenticated OPTIONS preflight must reach the handler, not 401"
+        );
+
+        let get = Request::get("/repo/info")
+            .header(header::ORIGIN, "tauri://localhost")
+            .extension(ConnectInfo(public))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = app.oneshot(get).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "the OPTIONS bypass must not weaken auth for real requests"
+        );
     }
 
     #[test]
