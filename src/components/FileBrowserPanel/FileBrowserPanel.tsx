@@ -341,6 +341,12 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		const subdir = currentSubdir();
 		// Subscribe to repo revision for auto-refresh on git changes
 		void (props.repoPath ? repositoriesStore.getRevision(props.repoPath) : 0);
+		// Subscribe to the owning connection reactively. A detached panel is a
+		// fresh WebView whose repositoriesStore hydrates async; until it does,
+		// repoRpc resolves no connection and fetches from the local backend (empty
+		// for a remote path). Reading it here re-runs the fetch once hydrate lands
+		// the connectionId, so the detached file browser shows the remote tree.
+		void (props.repoPath ? repositoriesStore.getConnectionId(props.repoPath) : undefined);
 		// Subscribe to dir watcher revision for auto-refresh on filesystem changes
 		const dirRev = dirRevision();
 		// Also subscribe to manual refresh trigger
