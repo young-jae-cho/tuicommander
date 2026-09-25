@@ -4,17 +4,26 @@ import { initPanelWindow } from "../hooks/initPanelWindow";
 import { invoke } from "../invoke";
 import type { PanelAdapter } from "../panelRouter";
 import { type DiffStatus, diffTabsStore, isDiffStatus } from "../stores/diffTabs";
+import { remoteConnectionsStore } from "../stores/remoteConnections";
 import { repositoriesStore } from "../stores/repositories";
 import { uiStore } from "../stores/ui";
 import { createPanelSyncReceiver } from "../utils/panelSync";
+import { repoConnectionInfo } from "../utils/repoRpc";
 
 const DetachedGitPanel: Component<{ params: URLSearchParams }> = (props) => {
 	const repoPath = props.params.get("repoPath");
 	const fsRoot = props.params.get("fsRoot");
 	const { emitAction } = createPanelSyncReceiver<null>("git");
 
-	onMount(() => {
-		void initPanelWindow();
+	onMount(async () => {
+		await initPanelWindow();
+		// Seed the owning connection from the main window's params so repoRpc
+		// routes to the daemon (this window's store is empty; do not re-tunnel).
+		const connectionId = props.params.get("connectionId");
+		const baseUrl = props.params.get("baseUrl");
+		if (connectionId && baseUrl) {
+			remoteConnectionsStore.seedConnected(connectionId, baseUrl, props.params.get("authUsername") ?? "");
+		}
 	});
 
 	const onOpenDiff = (repo: string, filePath: string, status: DiffStatus, scope?: string, untracked?: boolean) => {
@@ -49,9 +58,11 @@ export const gitPanelAdapter: PanelAdapter = {
 	detachParams: () => {
 		const repoPath = repositoriesStore.state.activeRepoPath;
 		const fsRoot = getActiveFsRoot();
+		const conn = repoConnectionInfo(repoPath);
 		return {
 			...(repoPath ? { repoPath } : {}),
 			...(fsRoot ? { fsRoot } : {}),
+			...(conn ? { connectionId: conn.connectionId, baseUrl: conn.baseUrl, authUsername: conn.authUsername } : {}),
 		};
 	},
 	handleAction(action: string, data: unknown) {

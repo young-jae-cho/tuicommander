@@ -331,6 +331,37 @@ function createRemoteConnectionsStore() {
 			return undefined;
 		},
 
+		/**
+		 * Mark a connection as connected with a caller-supplied baseUrl, WITHOUT the
+		 * side effects of connect() (no tunnel spawn, no health poll, no SSE bridge).
+		 *
+		 * A detached panel is a separate WebView with its own empty store; the main
+		 * window already established the connection (and, for SSH, the tunnel). The
+		 * panel only needs to route HTTP to that same baseUrl, so it seeds the entry
+		 * from the connection info passed through detachParams rather than reconnecting
+		 * (which would open a duplicate tunnel). Idempotent: a no-op if already
+		 * connected to the same baseUrl.
+		 */
+		seedConnected(connectionId: string, baseUrl: string, authUsername: string): void {
+			const existing = state.connections[connectionId];
+			if (existing?.status === "connected" && existing.baseUrl === baseUrl) return;
+			const connection: RemoteConnection =
+				existing?.connection ??
+				({
+					id: connectionId,
+					name: connectionId,
+					transport: { type: "Direct", url: baseUrl },
+					auth_username: authUsername,
+					enabled: true,
+				} as RemoteConnection);
+			setState("connections", connectionId, {
+				connection: { ...connection, auth_username: authUsername },
+				status: "connected",
+				baseUrl,
+				error: undefined,
+			});
+		},
+
 		/** Reactive getter for all connections */
 		getConnections(): Record<string, ConnectionState> {
 			return state.connections;

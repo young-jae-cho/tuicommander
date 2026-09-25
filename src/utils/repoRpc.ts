@@ -13,6 +13,7 @@
  */
 
 import { invoke } from "../invoke";
+import { remoteConnectionsStore } from "../stores/remoteConnections";
 import { repositoriesStore } from "../stores/repositories";
 import { rpc } from "../transport";
 
@@ -31,4 +32,22 @@ export function repoRpc<T>(repoPath: string, cmd: string, args: Record<string, u
 	const connectionId = repoConnectionId(repoPath);
 	if (connectionId) return rpc<T>(cmd, args, connectionId);
 	return invoke<T>(cmd, args);
+}
+
+/**
+ * The resolved connection info for a repo, for passing to a detached panel
+ * window. Returns undefined for a local repo or one whose connection is not
+ * currently connected in THIS window. The main window (which owns the live
+ * connection) calls this in `detachParams`; the detached window seeds its own
+ * store from it so repoRpc routes there without re-opening a tunnel.
+ */
+export function repoConnectionInfo(
+	repoPath: string | null | undefined,
+): { connectionId: string; baseUrl: string; authUsername: string } | undefined {
+	const connectionId = repoConnectionId(repoPath);
+	if (!connectionId) return undefined;
+	const baseUrl = remoteConnectionsStore.getBaseUrl(connectionId);
+	if (!baseUrl) return undefined;
+	const authUsername = remoteConnectionsStore.getConnectionState(connectionId)?.connection.auth_username ?? "";
+	return { connectionId, baseUrl, authUsername };
 }

@@ -10,6 +10,7 @@ import { appLogger } from "../../stores/appLogger";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { markInternalDragEnd, markInternalDragStart, startNativeDrag } from "../../stores/dragDrop";
 import { editorTabsStore } from "../../stores/editorTabs";
+import { remoteConnectionsStore } from "../../stores/remoteConnections";
 import { repositoriesStore } from "../../stores/repositories";
 import { toastsStore } from "../../stores/toasts";
 import { uiStore } from "../../stores/ui";
@@ -342,11 +343,13 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		// Subscribe to repo revision for auto-refresh on git changes
 		void (props.repoPath ? repositoriesStore.getRevision(props.repoPath) : 0);
 		// Subscribe to the owning connection reactively. A detached panel is a
-		// fresh WebView whose repositoriesStore hydrates async; until it does,
-		// repoRpc resolves no connection and fetches from the local backend (empty
-		// for a remote path). Reading it here re-runs the fetch once hydrate lands
-		// the connectionId, so the detached file browser shows the remote tree.
-		void (props.repoPath ? repositoriesStore.getConnectionId(props.repoPath) : undefined);
+		// fresh WebView whose repositoriesStore hydrates async and whose
+		// remoteConnectionsStore is seeded from detachParams after mount; until both
+		// land, repoRpc resolves no baseUrl and fetches from the local backend (empty
+		// for a remote path). Reading the connectionId AND its baseUrl here re-runs
+		// the fetch once they arrive, so the detached file browser shows the tree.
+		const repoConnId = props.repoPath ? repositoriesStore.getConnectionId(props.repoPath) : undefined;
+		void (repoConnId ? remoteConnectionsStore.getBaseUrl(repoConnId) : undefined);
 		// Subscribe to dir watcher revision for auto-refresh on filesystem changes
 		const dirRev = dirRevision();
 		// Also subscribe to manual refresh trigger

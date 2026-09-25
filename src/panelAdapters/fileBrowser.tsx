@@ -3,18 +3,28 @@ import { FileBrowserPanel } from "../components/FileBrowserPanel";
 import { initPanelWindow } from "../hooks/initPanelWindow";
 import { invoke } from "../invoke";
 import type { PanelAdapter } from "../panelRouter";
+import { remoteConnectionsStore } from "../stores/remoteConnections";
 import { repositoriesStore } from "../stores/repositories";
 import { uiStore } from "../stores/ui";
 import { openFileAction } from "../utils/filePreview";
 import { createPanelSyncReceiver } from "../utils/panelSync";
+import { repoConnectionInfo } from "../utils/repoRpc";
 
 const DetachedFileBrowser: Component<{ params: URLSearchParams }> = (props) => {
 	const repoPath = props.params.get("repoPath");
 	const fsRoot = props.params.get("fsRoot");
 	const { emitAction } = createPanelSyncReceiver<null>("file-browser");
 
-	onMount(() => {
-		void initPanelWindow();
+	onMount(async () => {
+		await initPanelWindow();
+		// Seed the owning connection from what the main window passed, so repoRpc
+		// routes to the daemon instead of throwing "not connected" (this window's
+		// own remoteConnectionsStore is empty and must not re-open a tunnel).
+		const connectionId = props.params.get("connectionId");
+		const baseUrl = props.params.get("baseUrl");
+		if (connectionId && baseUrl) {
+			remoteConnectionsStore.seedConnected(connectionId, baseUrl, props.params.get("authUsername") ?? "");
+		}
 	});
 
 	return (
@@ -47,9 +57,11 @@ export const fileBrowserPanelAdapter: PanelAdapter = {
 	detachParams: () => {
 		const repoPath = repositoriesStore.state.activeRepoPath;
 		const fsRoot = getActiveFsRoot();
+		const conn = repoConnectionInfo(repoPath);
 		return {
 			...(repoPath ? { repoPath } : {}),
 			...(fsRoot ? { fsRoot } : {}),
+			...(conn ? { connectionId: conn.connectionId, baseUrl: conn.baseUrl, authUsername: conn.authUsername } : {}),
 		};
 	},
 	handleAction(action: string, data: unknown) {
