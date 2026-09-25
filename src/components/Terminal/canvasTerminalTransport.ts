@@ -1,5 +1,7 @@
 import { appLogger } from "../../stores/appLogger";
 import { isTauri, rpc } from "../../transport";
+import { getRemoteAuthUsername } from "../../transportRuntime";
+import { getSessionToken } from "../../utils/remoteAuth";
 import { isPerfDebug } from "../../utils/perfDebug";
 
 export interface TerminalTransport {
@@ -39,7 +41,12 @@ export function toBinaryPayload(data: unknown): ArrayBuffer | null {
 	return null;
 }
 
-export function createTransport(sessionId: string, baseUrl?: string): TerminalTransport {
+export function createTransport(
+	sessionId: string,
+	baseUrl?: string,
+	connectionId?: string,
+): TerminalTransport {
+	if (baseUrl && connectionId) return new WsTransport(sessionId, baseUrl, connectionId);
 	if (baseUrl) return new WsTransport(sessionId, baseUrl);
 	return isTauri() ? new TauriTransport(sessionId) : new WsTransport(sessionId);
 }
@@ -153,6 +160,7 @@ const INITIAL_RECONNECT_MS = 1000;
 export class WsTransport implements TerminalTransport {
 	private sessionId: string;
 	private baseUrl: string | undefined;
+	private connectionId: string | undefined;
 	private ws: WebSocket | null = null;
 	private onFrameHandler: ((data: ArrayBuffer) => void) | null = null;
 	private eventHandlers = new Map<string, (payload: unknown) => void>();
@@ -160,9 +168,10 @@ export class WsTransport implements TerminalTransport {
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private reconnectAttempts = 0;
 
-	constructor(sessionId: string, baseUrl?: string) {
+	constructor(sessionId: string, baseUrl?: string, connectionId?: string) {
 		this.sessionId = sessionId;
 		this.baseUrl = baseUrl;
+		this.connectionId = connectionId;
 	}
 
 	async subscribe(onFrame: (data: ArrayBuffer) => void): Promise<void> {
@@ -186,6 +195,16 @@ export class WsTransport implements TerminalTransport {
 			// Remote: convert http(s) baseUrl to ws(s)
 			const wsBase = this.baseUrl.replace(/^http/, "ws");
 			url = `${wsBase}/sessions/${encodeURIComponent(this.sessionId)}/stream?format=grid`;
+			// A WebSocket cannot set an Authorization header, so the terminal stream
+			// authenticates with the daemon's session token as a query param
+			// (`auth::has_valid_url_token`). Undefined token = auth-disabled daemon.
+			if (this.connectionId) {
+				const username = getRemoteAuthUsername(this.connectionId);
+				if (username) {
+					const token = await getSessionToken(this.baseUrl, this.connectionId, username);
+					if (token) url += `&token=${encodeURIComponent(token)}`;
+				}
+			}
 		} else {
 			// Local: use current page origin
 			const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -259,7 +278,7 @@ export class WsTransport implements TerminalTransport {
 	}
 
 	async invoke(cmd: string, args: Record<string, unknown>): Promise<unknown> {
-		return rpc(cmd, args);
+		return rpc(cmd, args, this.connectionId);
 	}
 
 	ackFrame(_received: number): void {

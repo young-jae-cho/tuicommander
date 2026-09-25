@@ -709,6 +709,11 @@ fn shared_routes() -> Router<Arc<AppState>> {
     Router::new()
         // Version (authenticated)
         .route("/api/version", get(session::app_version))
+        // Session token (authenticated) — shared so the tuic-remote daemon serves
+        // it too. A remote client needs it to authenticate WebSocket terminal
+        // streams via `?token=` (a browser WebSocket cannot send an Authorization
+        // header). Guarded by `require_local_or_auth` like every shared route.
+        .route("/api/session-token", get(config_routes::get_session_token))
         // Progress. Shared, not desktop-only: the store is a SQLite file in the
         // app config directory and every handler calls `crate::progress::*`,
         // which needs no WebView and no Tauri. These lived in `build_router`
@@ -2473,6 +2478,52 @@ mod tests {
         assert_eq!(json["ok"], true);
     }
 
+    /// `/api/session-token` is the surface a remote client uses to learn the
+    /// bearer it needs for WebSocket auth (a browser WebSocket cannot send an
+    /// Authorization header). It must hand the token to a loopback caller and
+    /// refuse an unauthenticated non-loopback one — otherwise it would leak the
+    /// daemon's master credential to anyone who can reach the port.
+    #[tokio::test]
+    async fn session_token_route_returns_token_to_loopback_and_refers_remote() {
+        // Loopback: the handler runs and returns the state's token.
+        let local = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
+        let app = build_router(test_state(), false, true);
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::get("/api/session-token")
+                    .extension(ConnectInfo(local))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["token"], "test-token");
+
+        // TEST-NET-3, so it can never be mistaken for loopback. No `Authenticated`
+        // marker (the middleware is not in this bare router), so the guard rejects.
+        let remote = std::net::SocketAddr::from(([203, 0, 113, 1], 4444));
+        let resp = app
+            .oneshot(
+                Request::get("/api/session-token")
+                    .extension(ConnectInfo(remote))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "an unauthenticated non-loopback caller must not learn the token"
+        );
+    }
+
     /// Every `/progress/*` route, with a body its extractors accept.
     ///
     /// The bodies must be VALID. An extractor runs before the handler, so a
@@ -2636,6 +2687,7 @@ mod tests {
         // false-fail a GET probe). Path params are filled with a placeholder segment.
         let must_exist = [
             "/api/version",
+            "/api/session-token",
             "/sessions",
             "/sessions/x/write",
             "/sessions/x/output",

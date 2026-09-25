@@ -102,6 +102,9 @@ pub(crate) enum Credential<'a> {
     GithubToken(&'a str),
     McpUpstream(&'a str),
     Provider(&'a str),
+    /// Per-remote-connection Basic-Auth password, keyed by connection UUID.
+    /// The username lives in `connections.json`; the secret never does.
+    RemoteConnectionPassword(&'a str),
 }
 
 impl Credential<'_> {
@@ -116,6 +119,7 @@ impl Credential<'_> {
             Self::GithubToken(id) => format!("github/account/{id}/token"),
             Self::McpUpstream(name) => format!("mcp/{name}"),
             Self::Provider(id) => format!("provider/{id}"),
+            Self::RemoteConnectionPassword(id) => format!("remote-connection/{id}/password"),
         }
     }
 
@@ -129,7 +133,8 @@ impl Credential<'_> {
             | Self::RelayToken
             | Self::PushVapidPrivateKey
             | Self::GithubToken(_)
-            | Self::Provider(_) => None,
+            | Self::Provider(_)
+            | Self::RemoteConnectionPassword(_) => None,
         }
     }
 }

@@ -7,6 +7,7 @@ import {
 	remoteConnectionsStore,
 } from "../../../../stores/remoteConnections";
 import s from "../../Settings.module.css";
+import { setConnectionPassword } from "../../../../utils/remoteAuth";
 
 // ---------------------------------------------------------------------------
 // Remote Machines panel
@@ -60,6 +61,9 @@ export function emptyRemoteForm() {
 		remoteDaemonPort: 9876,
 		directUrl: "",
 		authUsername: "",
+		// Transient: typed here, stored in the OS keyring on save, never in the
+		// connection record. Empty on edit means "leave the stored password as-is".
+		authPassword: "",
 	};
 }
 
@@ -120,6 +124,10 @@ export const RemoteMachinesPanel: Component = () => {
 		setError("");
 		try {
 			await remoteConnectionsStore.addConnection(conn);
+			// The password is a secret: store it in the OS keyring, not connections.json.
+			if (f.authPassword.length > 0) {
+				await setConnectionPassword(conn.id, f.authPassword);
+			}
 			setForm(emptyRemoteForm());
 			setShowAdd(false);
 		} catch (e) {
@@ -141,6 +149,8 @@ export const RemoteMachinesPanel: Component = () => {
 			remoteDaemonPort: conn.transport.type === "Ssh" ? conn.transport.remote_daemon_port : 9876,
 			directUrl: conn.transport.type === "Direct" ? conn.transport.url : "",
 			authUsername: conn.auth_username,
+			// Password is never read back from the keyring into the form; blank = keep stored.
+			authPassword: "",
 		});
 	}
 
@@ -173,6 +183,10 @@ export const RemoteMachinesPanel: Component = () => {
 				await remoteConnectionsStore.disconnect(connState.connection.id);
 			}
 			await remoteConnectionsStore.addConnection(updated);
+			// Empty password field = keep the stored secret; non-empty = replace it.
+			if (f.authPassword.length > 0) {
+				await setConnectionPassword(updated.id, f.authPassword);
+			}
 			setEditingId(null);
 		} catch (e) {
 			setError(String(e));
@@ -289,6 +303,14 @@ export const RemoteMachinesPanel: Component = () => {
 					placeholder="Auth username (for TUIC API authentication)"
 					value={props.formData.authUsername}
 					onInput={(e) => props.setFormData((f) => ({ ...f, authUsername: e.currentTarget.value }))}
+				/>
+				<input
+					type="password"
+					class={s.input}
+					autocomplete="off"
+					placeholder="Auth password (stored in the OS keyring)"
+					value={props.formData.authPassword}
+					onInput={(e) => props.setFormData((f) => ({ ...f, authPassword: e.currentTarget.value }))}
 				/>
 			</>
 		);

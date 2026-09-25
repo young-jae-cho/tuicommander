@@ -201,8 +201,23 @@ Remote connections let you manage `tuic-remote` daemons running on other machine
 1. Open **Settings** → **Connections** → **Add Connection**
 2. Select **Direct** transport
 3. Enter the URL of the remote daemon (e.g., `http://10.0.0.5:9877`)
-4. Set the auth username
+4. Set the auth username and password (the password is stored in your OS keyring,
+   never in the connection file; leave it blank only if the daemon has auth disabled)
 5. Save — health polling begins immediately
+
+### How Authentication Works
+
+A remote daemon protects every endpoint (except `/health`) with Basic Auth. The
+desktop app signs requests automatically using the credentials you entered:
+
+- **API calls and the live event stream** use HTTP Basic Auth.
+- **Terminal streams** run over a WebSocket, which cannot carry an Authorization
+  header, so the app authenticates them with the daemon's session token passed as
+  a `?token=` query parameter. The token is fetched once (over an authenticated
+  call) and is stable across daemon restarts.
+
+If a connection shows **Connected** but terminals or panels fail with `401`, the
+password is wrong or missing — re-enter it in the connection's edit form.
 
 ### Remote Repositories and Terminals
 
@@ -284,10 +299,16 @@ TUIC_PORT=8080 ./tuic-remote
 TUIC_PORT=8080 ./tuic-remote --instance build-host
 ```
 
-The daemon binds to `0.0.0.0:<port>` and serves:
-- The TUICommander web UI (PWA-capable)
+The daemon binds to `0.0.0.0:<port>` and serves the **API only**:
+- HTTP/JSON endpoints (sessions, repos, files, …)
 - WebSocket terminal streaming
+- Server-sent events (`/events`)
 - MCP tool integration (for AI agents)
+
+It does **not** serve the TUICommander web UI — the frontend is embedded only in
+the desktop app. To use a `tuic-remote` daemon, connect to it from the desktop
+app's **Remote Connection Manager** (Settings → Connections), which provides the
+UI and talks to the daemon over the API above.
 
 ### TLS
 

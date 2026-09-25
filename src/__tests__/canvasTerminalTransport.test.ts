@@ -388,8 +388,23 @@ describe("canvasTerminalTransport", () => {
 			const transport = new WsTransport("session-1");
 			const result = await transport.invoke("resize_pty", { sessionId: "session-1", rows: 24, cols: 80 });
 
-			expect(rpc).toHaveBeenCalledWith("resize_pty", { sessionId: "session-1", rows: 24, cols: 80 });
+			// Local transport carries no connectionId — rpc gets undefined as the 3rd arg.
+			expect(rpc).toHaveBeenCalledWith("resize_pty", { sessionId: "session-1", rows: 24, cols: 80 }, undefined);
 			expect(result).toBe("ws-result");
+		});
+
+		it("routes invoke through rpc() with the connectionId for a remote transport", async () => {
+			const { rpc } = await import("../transport");
+			(rpc as ReturnType<typeof vi.fn>).mockResolvedValue("ws-result");
+			const transport = new WsTransport("session-1", "http://remote:9877", "conn-abc");
+			await transport.invoke("resize_pty", { sessionId: "session-1", rows: 24, cols: 80 });
+
+			// The connectionId is what makes rpc() sign + route to the remote daemon.
+			expect(rpc).toHaveBeenCalledWith(
+				"resize_pty",
+				{ sessionId: "session-1", rows: 24, cols: 80 },
+				"conn-abc",
+			);
 		});
 	});
 });

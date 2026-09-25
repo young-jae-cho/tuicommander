@@ -42,6 +42,7 @@ describe("ServicesTab remote machine presentation", () => {
 			remoteDaemonPort: 9876,
 			directUrl: "",
 			authUsername: "",
+			authPassword: "",
 		});
 	});
 });

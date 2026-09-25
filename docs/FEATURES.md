@@ -1995,6 +1995,10 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - Default port: 9877 (overridable via `TUIC_PORT` env var)
 - `--set-password` performs interactive password setup (bcrypt hashed) inside
   the instance selected earlier on the same command line
+- The session token (the `?token=` bearer used to authenticate WebSocket/SSE
+  streams, which cannot send an Authorization header) is minted on first boot
+  and **persisted to the OS keyring** (`remote/session-token`), so it survives
+  restarts and remote clients stay authenticated across daemon reboots
 - LAN auth bypass always disabled in headless mode (security hardening)
 
 ### 22.3 TLS
@@ -2084,23 +2088,41 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - **SSH** — Connects via SSH tunnel to a remote `tuic-remote` daemon; auto-creates port forwarding
   - Fields: host, SSH port (default 22), SSH user, optional identity file, remote daemon port (default 9877)
 - **Direct** — Connects to a `tuic-remote` daemon URL directly (for Tailscale, LAN, or VPN scenarios)
-  - Fields: URL, auth username
+  - Fields: URL, auth username, auth password
 
-### 24.2 Storage
+### 24.2 Authentication
+A remote daemon guards every non-`/health` route with Basic Auth. The desktop
+client signs each request with the connection's credentials, using the one
+mechanism each transport supports:
+- **HTTP + SSE** — `Authorization: Basic`, built from the stored username + password
+- **WebSocket** — cannot set headers, so the terminal stream authenticates with the
+  daemon's session token as a `?token=` query param (`auth::has_valid_url_token`).
+  The client fetches the token once over a Basic-authed `GET /api/session-token`
+  and caches it per connection
+- The password is stored in the **OS keyring** (`remote-connection/<id>/password`),
+  never in `connections.json`; an empty password means the daemon has auth disabled
+  and requests are sent unsigned
+
+### 24.3 Storage
 - Connections persisted in `<config_dir>/connections.json`
 - Atomic writes via temp file + rename
-- Each connection has UUID, name, transport, auth username, and enabled flag
+- Each connection has UUID, name, transport, auth username, and enabled flag;
+  the auth password lives in the keyring, not the record
 
-### 24.3 Remote Repositories and Terminals
+### 24.4 Remote Repositories and Terminals
 - Repos can be assigned to a remote connection; sidebar shows remote badge
-- Terminals on remote repos route WebSocket I/O through the connection's base URL
+- Terminals on remote repos route WebSocket I/O through the connection's base URL,
+  resolved from the terminal's owning repo (`repositoriesStore.getConnectionId`)
 - `transport.ts` routes `invoke()` calls based on the active connection's `connectionId`
-- `canvasTerminalTransport.ts` supports configurable `baseUrl` for remote WebSocket connections
+- `canvasTerminalTransport.ts` supports configurable `baseUrl` + `connectionId` for
+  remote WebSocket connections
 - Health polling for direct connections; SSH connections rely on tunnel supervisor status
 
-### 24.4 SSE Event Bridge
+### 24.5 SSE Event Bridge
 - `remoteEventBridge.ts` subscribes to server-sent events from remote daemons
 - Bridges remote events (repo changes, PTY output, agent status) into local stores
+- Authenticates the stream with the session token (`?token=`), since EventSource
+  cannot set an Authorization header
 - Automatic reconnection on connection loss
 
 ---

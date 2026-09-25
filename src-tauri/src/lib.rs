@@ -1693,6 +1693,9 @@ pub fn run() {
             remote_connection::list_remote_connections,
             remote_connection::save_remote_connection,
             remote_connection::delete_remote_connection,
+            remote_connection::save_remote_connection_password,
+            remote_connection::has_remote_connection_password,
+            remote_connection::read_remote_connection_password,
             open_secondary_window,
             panel_window::open_panel_window,
             panel_window::focus_panel_window,
@@ -2282,6 +2285,25 @@ pub fn set_password_interactive() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Mint a session token for a headless daemon and PERSIST it to the
+/// keyring-backed vault, mirroring the desktop path (`config::config_for_disk`
+/// strips `session_token` from config.json and stores it via
+/// `Credential::RemoteSessionToken`). Without the persist, the headless daemon
+/// rotated its bearer on every boot, so a remote client that had learned the
+/// token — required for WebSocket auth, which cannot send an Authorization
+/// header — was locked out after a restart. No-op when a token already exists.
+#[cfg(not(feature = "desktop"))]
+fn ensure_persisted_session_token(app_config: &mut config::AppConfig) -> anyhow::Result<()> {
+    if app_config.services.auth.session_token.is_empty() {
+        let token = uuid::Uuid::new_v4().to_string();
+        credentials::set(credentials::Credential::RemoteSessionToken, &token)
+            .map_err(|e| anyhow::anyhow!("Failed to persist session token: {e}"))?;
+        app_config.services.auth.session_token = token;
+        app_config.services.auth.session_token_exists = true;
+    }
+    Ok(())
+}
+
 /// Run the headless (non-desktop) server.
 /// Called by the `tuic-remote` binary.
 #[cfg(not(feature = "desktop"))]
@@ -2309,10 +2331,7 @@ pub async fn run_headless(port: u16) -> anyhow::Result<()> {
         );
         app_config.services.auth.lan_auth_bypass = false;
     }
-    if app_config.services.auth.session_token.is_empty() {
-        app_config.services.auth.session_token = uuid::Uuid::new_v4().to_string();
-        app_config.services.auth.session_token_exists = true;
-    }
+    ensure_persisted_session_token(&mut app_config)?;
 
     let data_dir = config::config_dir();
     let worktrees_dir = data_dir.join("worktrees");
@@ -2450,10 +2469,7 @@ pub async fn run_remote(port: u16) -> anyhow::Result<()> {
         );
         app_config.services.auth.lan_auth_bypass = false;
     }
-    if app_config.services.auth.session_token.is_empty() {
-        app_config.services.auth.session_token = uuid::Uuid::new_v4().to_string();
-        app_config.services.auth.session_token_exists = true;
-    }
+    ensure_persisted_session_token(&mut app_config)?;
 
     let data_dir = config::config_dir();
     let worktrees_dir = data_dir.join("worktrees");

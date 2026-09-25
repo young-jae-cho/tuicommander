@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Remote connections can now authenticate to a password-protected daemon.**
+  The Remote Connection Manager stored only a username and signed nothing, so a
+  Direct or SSH connection reported "Connected" (health is public) while every
+  real call — sessions, terminals, events — returned 401. The connection form now
+  takes a password (kept in the OS keyring, never in `connections.json`); HTTP and
+  the SSE stream send Basic Auth, and the WebSocket terminal stream — which cannot
+  carry a header — authenticates with the daemon's session token as a `?token=`
+  query param, fetched once over an authenticated call. The headless daemon also
+  now persists that token to the keyring instead of rotating it on every boot, so
+  a client stays authenticated across a daemon restart.
+
 ### Changed
 
 - **Project Progress is one journal, one database and a dialog.** The feature

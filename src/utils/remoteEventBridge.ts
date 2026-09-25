@@ -7,6 +7,8 @@
 
 import { appLogger, previewLogPayload } from "../stores/appLogger";
 import { repositoriesStore } from "../stores/repositories";
+import { getRemoteAuthUsername } from "../transportRuntime";
+import { getSessionToken } from "./remoteAuth";
 import type { RepoChangeKind } from "../types";
 
 /**
@@ -25,7 +27,22 @@ export function startRemoteEventBridge(connectionId: string, baseUrl: string): (
 	function connect(): void {
 		if (closed) return;
 
-		const url = `${baseUrl}/events?types=${encodeURIComponent("repo-changed,session-status,session-closed")}`;
+		void open();
+	}
+
+	async function open(): Promise<void> {
+		if (closed) return;
+
+		// EventSource cannot set an Authorization header, so the SSE stream
+		// authenticates with the daemon's session token as a query param
+		// (`auth::has_valid_url_token`). Undefined token = auth-disabled daemon.
+		const username = getRemoteAuthUsername(connectionId);
+		const token = username ? await getSessionToken(baseUrl, connectionId, username) : undefined;
+		if (closed) return;
+
+		const params = new URLSearchParams({ types: "repo-changed,session-status,session-closed" });
+		if (token) params.set("token", token);
+		const url = `${baseUrl}/events?${params.toString()}`;
 		es = new EventSource(url);
 
 		es.onopen = () => {

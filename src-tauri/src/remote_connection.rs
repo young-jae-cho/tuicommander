@@ -206,7 +206,59 @@ pub async fn delete_remote_connection(
     let mut connections =
         RemoteConnectionStore::load(&state.data_dir).map_err(|e| e.to_string())?;
     connections.retain(|c| c.id != id);
-    RemoteConnectionStore::save(&state.data_dir, &connections).map_err(|e| e.to_string())
+    RemoteConnectionStore::save(&state.data_dir, &connections).map_err(|e| e.to_string())?;
+    // Drop the stored secret with the connection that owned it.
+    let _ = crate::credentials::delete(crate::credentials::Credential::RemoteConnectionPassword(
+        &id,
+    ));
+    Ok(())
+}
+
+/// Store the Basic-Auth password for a remote connection in the OS keyring.
+///
+/// The username is plain config (`connections.json`); the password is a secret
+/// and never touches disk in cleartext. The desktop client signs HTTP/SSE calls
+/// with `Authorization: Basic` and fetches the session token (for WebSocket
+/// auth, which cannot set headers) using these credentials.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn save_remote_connection_password(id: String, password: String) -> Result<(), String> {
+    if uuid::Uuid::parse_str(&id).is_err() {
+        return Err("id must be a valid UUID".to_string());
+    }
+    crate::credentials::set(
+        crate::credentials::Credential::RemoteConnectionPassword(&id),
+        &password,
+    )
+}
+
+/// Whether a password is stored for the connection (for the UI's "set?" badge).
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn has_remote_connection_password(id: String) -> Result<bool, String> {
+    if uuid::Uuid::parse_str(&id).is_err() {
+        return Err("id must be a valid UUID".to_string());
+    }
+    crate::credentials::get(crate::credentials::Credential::RemoteConnectionPassword(
+        &id,
+    ))
+    .map(|v| v.is_some())
+}
+
+/// Read the stored Basic-Auth password for a connection (null if none).
+///
+/// Desktop-only and keyring-backed: the frontend transport uses this to sign
+/// remote HTTP/SSE requests with `Authorization: Basic`. The secret never lives
+/// in `connections.json`.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn read_remote_connection_password(id: String) -> Result<Option<String>, String> {
+    if uuid::Uuid::parse_str(&id).is_err() {
+        return Err("id must be a valid UUID".to_string());
+    }
+    crate::credentials::get(crate::credentials::Credential::RemoteConnectionPassword(
+        &id,
+    ))
 }
 
 // ---------------------------------------------------------------------------

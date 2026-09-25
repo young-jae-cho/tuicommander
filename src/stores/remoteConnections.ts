@@ -1,8 +1,9 @@
 import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
-import { setRemoteBaseUrlLookup } from "../transportRuntime";
+import { setRemoteBaseUrlLookup, setRemoteAuthUsernameLookup } from "../transportRuntime";
 import { startRemoteEventBridge } from "../utils/remoteEventBridge";
+import { clearConnectionAuth } from "../utils/remoteAuth";
 import { appLogger } from "./appLogger";
 import { tunnelsStore } from "./tunnels";
 
@@ -257,6 +258,7 @@ function createRemoteConnectionsStore() {
 			if (!connState) return;
 
 			stopHealthPolling(id);
+			clearConnectionAuth(id);
 			const bridgeCleanup = eventBridges.get(id);
 			if (bridgeCleanup) {
 				bridgeCleanup();
@@ -348,3 +350,7 @@ function createRemoteConnectionsStore() {
 
 export const remoteConnectionsStore = createRemoteConnectionsStore();
 setRemoteBaseUrlLookup((connectionId) => remoteConnectionsStore.getBaseUrl(connectionId));
+setRemoteAuthUsernameLookup((connectionId) => {
+	const st = remoteConnectionsStore.getConnectionState(connectionId);
+	return st?.status === "connected" ? st.connection.auth_username : undefined;
+});

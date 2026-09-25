@@ -3,7 +3,9 @@ import { lastMenuActionTime } from "../../menuDedup";
 import { isMacOS, isWindows } from "../../platform";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { appLogger } from "../../stores/appLogger";
+import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
+import { getRemoteBaseUrl } from "../../transportRuntime";
 import { reclaimParkedTerminal } from "../../stores/terminalOwnership";
 import { terminalsStore } from "../../stores/terminals";
 import { filterMatchesToBlock } from "../../utils/blockSearchFilter";
@@ -2123,7 +2125,15 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// shell prints its first prompt as soon as the PTY spawns, while
 		// `document.fonts.load` may still have a cold-cache round trip to make.
 		// The grid subscription stays below: frames replay on subscribe.
-		transport = createTransport(props.sessionId);
+		// A terminal owned by a remote repo streams over the remote daemon's
+		// WebSocket and its RPCs must be routed + signed for that connection.
+		// Local repos resolve to (undefined, undefined) → the local transport.
+		const termData = terminalsStore.get(props.terminalId);
+		const repoConnectionId = termData?.repoPath
+			? repositoriesStore.getConnectionId(termData.repoPath)
+			: undefined;
+		const remoteBaseUrl = repoConnectionId ? getRemoteBaseUrl(repoConnectionId) : undefined;
+		transport = createTransport(props.sessionId, remoteBaseUrl, repoConnectionId);
 		invokeRef = (cmd, args) => transport!.invoke(cmd, args);
 		// Teardown covering what exists right now: unmounting during the font load
 		// below must not leave these listeners attached. Widened to the DOM

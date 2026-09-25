@@ -152,6 +152,28 @@ pub(super) async fn rotate_session_token(
     (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
 
+/// Return the daemon's session token to an already-authenticated caller.
+///
+/// A remote client authenticates HTTP/SSE with `Authorization: Basic`, but a
+/// browser `WebSocket` cannot set request headers — so the terminal stream is
+/// authenticated with the `?token=` query param the auth middleware accepts
+/// (`auth::has_valid_url_token`). This endpoint is how the client learns that
+/// token: it is reachable only behind `basic_auth_middleware` (the
+/// `Authenticated` marker) or loopback, so a caller that can read it has
+/// already proven its password. `GET /config` deliberately strips the token
+/// from its response; this is the one surface that hands it back on purpose.
+pub(super) async fn get_session_token(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
+        return resp;
+    }
+    let token = state.session_token.read().clone();
+    (StatusCode::OK, Json(serde_json::json!({ "token": token })))
+}
+
 pub(super) async fn get_notification_config() -> impl IntoResponse {
     Json(crate::config::load_notification_config())
 }

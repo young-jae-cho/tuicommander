@@ -6,7 +6,8 @@
  */
 
 import type { LogLine } from "./mobile/utils/logLine";
-import { getRemoteBaseUrl, previewLogPayload, transportLogger } from "./transportRuntime";
+import { getRemoteAuthUsername, getRemoteBaseUrl, previewLogPayload, transportLogger } from "./transportRuntime";
+import { getBasicAuthHeader } from "./utils/remoteAuth";
 
 // ---------------------------------------------------------------------------
 // MCP upstream config types (mirrors Rust structs in mcp_upstream_config.rs)
@@ -2195,6 +2196,13 @@ export const INTENTIONALLY_UNMAPPED: ReadonlySet<string> = new Set<string>([
 	"plugin_unwatch",
 	// Plugin credential — OS keychain / native security tool.
 	"plugin_read_credential",
+	// Remote-connection password — OS keyring secret, desktop-only. The browser
+	// transport signs remote requests itself from an already-resolved credential;
+	// it never reads the keyring. `save_remote_connection_password`,
+	// `has_remote_connection_password`, `read_remote_connection_password`.
+	"save_remote_connection_password",
+	"has_remote_connection_password",
+	"read_remote_connection_password",
 	// Plugin install/uninstall — take AppHandle; local-FS install/emit.
 	"install_plugin_from_zip",
 	"install_plugin_from_folder",
@@ -2448,9 +2456,21 @@ async function rpcImpl<T>(command: string, args: Record<string, unknown>, connec
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
+	const headers: Record<string, string> = { "Content-Type": "application/json" };
+	// Remote daemons guard every non-/health route with Basic Auth. Sign the
+	// request with the connection's stored password (keyring-backed). Local
+	// (no connectionId) and auth-disabled daemons (no stored password) omit it.
+	if (connectionId) {
+		const username = getRemoteAuthUsername(connectionId);
+		if (username) {
+			const auth = await getBasicAuthHeader(connectionId, username);
+			if (auth) headers["Authorization"] = auth;
+		}
+	}
+
 	const init: RequestInit = {
 		method: mapping.method,
-		headers: { "Content-Type": "application/json" },
+		headers,
 		signal: controller.signal,
 	};
 	if (mapping.body !== undefined) {
